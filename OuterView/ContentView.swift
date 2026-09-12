@@ -1,6 +1,7 @@
 import SwiftUI
+import SwiftData
 
-// Lightweight, in-memory content for reviewing the UI before persistence is wired up.
+// Value drafts keep Cancel isolated from the saved SwiftData models.
 struct SetDraft: Identifiable {
     var id = UUID()
     var title = "Untitled training set"
@@ -10,9 +11,9 @@ struct SetDraft: Identifiable {
 
     static var sample: SetDraft {
         SetDraft(title: "Admissions practice · Sample", groups: [
-            GroupDraft(label: "Ethics", questions: ["What does it mean to make a fair decision?", "Describe a situation where two important values might conflict."]),
-            GroupDraft(label: "Personal experience", questions: ["Tell us about a time you changed your mind."]),
-            GroupDraft(label: "Looking ahead", questions: ["What would you like to contribute to your university community?"])
+            GroupDraft(label: "Ethics", questions: [QuestionDraft(text: "What does it mean to make a fair decision?"), QuestionDraft(text: "Describe a situation where two important values might conflict.")]),
+            GroupDraft(label: "Personal experience", questions: [QuestionDraft(text: "Tell us about a time you changed your mind.")]),
+            GroupDraft(label: "Looking ahead", questions: [QuestionDraft(text: "What would you like to contribute to your university community?")])
         ])
     }
 }
@@ -20,12 +21,24 @@ struct SetDraft: Identifiable {
 struct GroupDraft: Identifiable {
     var id = UUID()
     var label = "New group"
-    var questions = [""]
+    var imagePath: String?
+    var questions = [QuestionDraft()]
+}
+
+struct QuestionDraft: Identifiable {
+    var id = UUID()
+    var text = ""
 }
 
 struct ContentView: View {
-    @State private var sets: [SetDraft] = []
+    @Environment(\.modelContext) private var modelContext
+    @Query private var models: [TrainingSet]
+    private var sets: [SetDraft] { models.map(SetDraft.init(model:)) }
+    private var library: TrainingLibrary { TrainingLibrary(context: modelContext) }
+    @State private var libraryError: String?
+    @State private var deletion: SetDraft?
     @State private var activeID: UUID?
+    @State private var workspaceRevision = 0
     @State private var draft: SetDraft?
     @State private var notice = false
 
@@ -34,7 +47,7 @@ struct ContentView: View {
             Group {
             if let index = sets.firstIndex(where: { $0.id == activeID }) {
                 PracticeWorkspace(set: sets[index], goHome: { activeID = nil }, edit: { draft = sets[index] })
-                    .id(sets[index].id)
+                    .id("\(sets[index].id)-\(workspaceRevision)")
             } else {
                 launchScreen
             }
@@ -49,19 +62,38 @@ struct ContentView: View {
                maxHeight: activeID == nil ? 520 : .infinity)
         .sheet(item: $draft) { value in
             SetEditor(initial: value) { saved in
-                if let index = sets.firstIndex(where: { $0.id == saved.id }) {
-                    sets[index] = saved
-                } else {
-                    sets.append(saved)
-                }
-                draft = nil
+                do {
+                    try library.save(saved)
+                    workspaceRevision += 1
+                    draft = nil
+                    cleanupAssets()
+                } catch { libraryError = error.localizedDescription }
             }
+            .alert("Couldn’t Save Set", isPresented: Binding(get: { libraryError != nil }, set: { if !$0 { libraryError = nil } })) {
+                Button("OK", role: .cancel) { libraryError = nil }
+            } message: { Text(libraryError ?? "") }
         }
+        .task { cleanupAssets() }
+        .alert("Library Error", isPresented: Binding(get: { libraryError != nil && draft == nil }, set: { if !$0 { libraryError = nil } })) {
+            Button("OK", role: .cancel) { libraryError = nil }
+        } message: { Text(libraryError ?? "") }
+        .confirmationDialog("Delete training set?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), titleVisibility: .visible) {
+            Button("Delete Set and Its Recordings", role: .destructive) {
+                guard let value = deletion else { return }
+                do { try library.delete(value.id); deletion = nil; cleanupAssets() }
+                catch { libraryError = error.localizedDescription }
+            }
+        } message: { Text("This permanently removes \(deletion?.title ?? "this set"), its passages, questions, and recordings.") }
         .alert("Shared-set import", isPresented: $notice) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Importing .outerview files will be connected in the next implementation pass.")
         }
+    }
+
+    private func cleanupAssets() {
+        do { try library.cleanupAssets(AssetStorage.applicationStorage()) }
+        catch { libraryError = "Your saved library is intact, but unused asset cleanup failed: " + error.localizedDescription }
     }
 
     private var recentSets: [SetDraft] {
@@ -74,9 +106,8 @@ struct ContentView: View {
     }
 
     private func openSet(_ id: UUID) {
-        guard let index = sets.firstIndex(where: { $0.id == id }) else { return }
-        sets[index].lastOpenedAt = Date()
-        activeID = id
+        do { try library.markOpened(id); activeID = id }
+        catch { libraryError = error.localizedDescription }
     }
 
     private var launchScreen: some View {
@@ -95,12 +126,12 @@ struct ContentView: View {
                     welcomeAction("Import a Shared Set…", icon: "square.and.arrow.down") { notice = true }
                     welcomeAction("Explore a Sample", icon: "play") {
                         let sample = SetDraft.sample
-                        sets.append(sample)
-                        openSet(sample.id)
+                        do { try library.save(sample); openSet(sample.id) }
+                        catch { libraryError = error.localizedDescription }
                     }
                 }.padding(.top, 12)
                 Spacer(minLength: 10)
-                Text("UI preview · Sets last until you quit")
+                Text("Training sets saved on this Mac")
                     .font(.caption).foregroundStyle(.tertiary)
             }
             .padding(30).frame(width: 350)
@@ -139,6 +170,10 @@ struct ContentView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(12).contentShape(Rectangle())
                                 }.buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button("Edit…") { draft = set }
+                                        Button("Delete…", role: .destructive) { deletion = set }
+                                    }
                                 Divider().padding(.leading, 52)
                             }
                         }.padding(.horizontal, 8)
@@ -172,6 +207,7 @@ private struct SetEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SetDraft
     @State private var selected = 0
+    @State private var pendingRemoval: (() -> Void)?
     let save: (SetDraft) -> Void
 
     init(initial: SetDraft, save: @escaping (SetDraft) -> Void) {
@@ -182,7 +218,7 @@ private struct SetEditor: View {
     private var valid: Bool {
         !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         draft.groups.allSatisfy { !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            $0.questions.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }
+            $0.questions.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }
     }
 
     var body: some View {
@@ -214,6 +250,20 @@ private struct SetEditor: View {
                             }
                         }
                     }
+                    HStack {
+                        Button("Move Group Up", systemImage: "arrow.up") {
+                            draft.groups.swapAt(selected, selected - 1); selected -= 1
+                        }.disabled(selected == 0)
+                        Button("Move Group Down", systemImage: "arrow.down") {
+                            draft.groups.swapAt(selected, selected + 1); selected += 1
+                        }.disabled(selected == draft.groups.count - 1)
+                        Button("Remove Group", systemImage: "trash", role: .destructive) {
+                            pendingRemoval = {
+                                draft.groups.remove(at: selected)
+                                selected = min(selected, draft.groups.count - 1)
+                            }
+                        }.disabled(draft.groups.count == 1)
+                    }.labelStyle(.iconOnly)
                     Button("Add Group", systemImage: "plus") {
                         draft.groups.append(GroupDraft())
                         selected = draft.groups.count - 1
@@ -234,20 +284,37 @@ private struct SetEditor: View {
                         Text("Questions").font(.headline)
                         ForEach(draft.groups[selected].questions.indices, id: \.self) { index in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Question \(index + 1)").font(.caption).foregroundStyle(.secondary)
-                                TextEditor(text: $draft.groups[selected].questions[index])
+                                HStack {
+                                    Text("Question \(index + 1)").font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button("Move Question Up", systemImage: "arrow.up") {
+                                        draft.groups[selected].questions.swapAt(index, index - 1)
+                                    }.disabled(index == 0)
+                                    Button("Move Question Down", systemImage: "arrow.down") {
+                                        draft.groups[selected].questions.swapAt(index, index + 1)
+                                    }.disabled(index == draft.groups[selected].questions.count - 1)
+                                    Button("Remove Question", systemImage: "trash", role: .destructive) {
+                                        pendingRemoval = { draft.groups[selected].questions.remove(at: index) }
+                                    }.disabled(draft.groups[selected].questions.count == 1)
+                                }.labelStyle(.iconOnly)
+                                TextEditor(text: $draft.groups[selected].questions[index].text)
                                     .font(.body).frame(height: 72).padding(8)
                                     .background(.background, in: RoundedRectangle(cornerRadius: 8))
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
                             }
                         }
                         Button("Add Question", systemImage: "plus") {
-                            draft.groups[selected].questions.append("")
+                            draft.groups[selected].questions.append(QuestionDraft())
                         }
                     }.padding(24)
                 }.id(draft.groups[selected].id)
             }
         }.frame(width: 900, height: 620)
+        .confirmationDialog("Remove this content?", isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }), titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { pendingRemoval?(); pendingRemoval = nil }
+        } message: {
+            Text("Saving the set will also delete recordings belonging to the removed questions. Cancel the editor to keep the original set.")
+        }
     }
 }
 
@@ -293,7 +360,7 @@ private struct PracticeWorkspace: View {
                             Text("QUESTION \(index + 1) OF \(group.questions.count)")
                                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             if showQuestion {
-                                Text(group.questions[index]).font(.system(size: 28, weight: .medium))
+                                Text(group.questions[index].text).font(.system(size: 28, weight: .medium))
                                     .textSelection(.enabled)
                             } else {
                                 Label("Question hidden", systemImage: "eye.slash").foregroundStyle(.secondary)
@@ -389,5 +456,5 @@ private struct PracticeWorkspace: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView().modelContainer(for: [TrainingSet.self, PassageGroup.self, Question.self, Take.self], inMemory: true)
 }
