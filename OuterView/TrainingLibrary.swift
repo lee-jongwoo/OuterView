@@ -67,7 +67,7 @@ final class Take {
 }
 
 /// All paths in the database are relative to this app-owned asset directory.
-struct AssetStorage {
+nonisolated struct AssetStorage: Sendable {
     let root: URL
 
     static func applicationStorage() throws -> AssetStorage {
@@ -121,7 +121,7 @@ struct AssetStorage {
     }
 }
 
-enum LibraryError: LocalizedError {
+nonisolated enum LibraryError: LocalizedError {
     case invalidDraft, invalidAssetPath
     var errorDescription: String? {
         switch self {
@@ -212,7 +212,7 @@ struct TrainingLibrary {
 }
 
 extension SetDraft {
-    init(model: TrainingSet) {
+    @MainActor init(model: TrainingSet) {
         id = model.id
         title = model.title
         createdAt = model.createdAt

@@ -25,7 +25,8 @@ PDF selection, page navigation, rectangular cropping, and saved passage previews
 are implemented. Camera/microphone selection, live preview, recording, per-question playback, and
 retry are implemented. Use Enable Camera to grant access. Failed saves can be
 retried, and pending recordings are recovered on the next launch. Shared-set
-import/export and video export are next.
+export is available from a set’s context menu. Import supports review before saving
+or blind import with summary counts. Video export is next.
 
 ## Development checkpoints
 
@@ -38,3 +39,11 @@ Run the `OuterViewTests` target for persistence/reopen, ordering, recording
 preservation, cascading deletion, asset cleanup, and path validation coverage.
 
 Open `OuterView.xcodeproj` and run the `OuterView` scheme on macOS 26.0 or later.
+
+## Shared-set format
+
+`.outerview` is a ZIP archive with UTF-8 names and uncompressed (STORE) entries,
+containing `manifest.json` (version 1) and PNG passage images. Groups/questions
+have explicit zero-based order values. Local IDs, recency, and recordings are
+excluded. Import validates size limits, entry names, checksums, images, and order
+before saving anything. Share the exported file directly without re-zipping it.

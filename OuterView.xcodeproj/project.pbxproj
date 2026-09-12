@@ -416,6 +416,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "OuterView-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OuterView;
 				INFOPLIST_KEY_NSCameraUsageDescription = "OuterView records video answers for your interview practice.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -454,6 +455,7 @@
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "OuterView-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = OuterView;
 				INFOPLIST_KEY_NSCameraUsageDescription = "OuterView records video answers for your interview practice.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

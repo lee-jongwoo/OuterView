@@ -1,9 +1,10 @@
 import SwiftUI
 import SwiftData
 import PDFKit
+import UniformTypeIdentifiers
 
 // Value drafts keep Cancel isolated from the saved SwiftData models.
-struct SetDraft: Identifiable {
+nonisolated struct SetDraft: Identifiable, Sendable {
     var id = UUID()
     var title = "Untitled training set"
     var createdAt = Date()
@@ -19,7 +20,7 @@ struct SetDraft: Identifiable {
     }
 }
 
-struct GroupDraft: Identifiable {
+nonisolated struct GroupDraft: Identifiable, Sendable {
     var id = UUID()
     var label = "New group"
     var imagePath: String?
@@ -27,7 +28,7 @@ struct GroupDraft: Identifiable {
     var questions = [QuestionDraft()]
 }
 
-struct QuestionDraft: Identifiable {
+nonisolated struct QuestionDraft: Identifiable, Sendable {
     var id = UUID()
     var text = ""
 }
@@ -42,7 +43,14 @@ struct ContentView: View {
     @State private var activeID: UUID?
     @State private var workspaceRevision = 0
     @State private var draft: SetDraft?
-    @State private var notice = false
+    @State private var importOptions = false
+    @State private var importingSet = false
+    @State private var blindImport = false
+    @State private var importSummary: String?
+    @State private var exportingSet = false
+    @State private var exportDocument: SharedSetDocument?
+    @State private var exportName = "Training Set"
+    @State private var sharingBusy = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -62,6 +70,8 @@ struct ContentView: View {
                minHeight: activeID == nil ? 520 : 680,
                idealHeight: activeID == nil ? 520 : 780,
                maxHeight: activeID == nil ? 520 : .infinity)
+        .disabled(sharingBusy)
+        .overlay { if sharingBusy { ProgressView("Preparing training set…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .sheet(item: $draft) { value in
             SetEditor(initial: value) { saved in
                 do {
@@ -92,10 +102,58 @@ struct ContentView: View {
                 catch { libraryError = error.localizedDescription }
             }
         } message: { Text("This permanently removes \(deletion?.title ?? "this set"), its passages, questions, and recordings.") }
-        .alert("Shared-set import", isPresented: $notice) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Importing .outerview files will be connected in the next implementation pass.")
+        .sheet(isPresented: $importOptions) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Import a Shared Set").font(.title2.bold())
+                Toggle("Blind import", isOn: $blindImport)
+                Text(blindImport ? "Only group and question counts will be shown after import." : "Review passages and questions before saving the imported set.")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Cancel") { importOptions = false }
+                    Spacer()
+                    Button("Choose File…") { importOptions = false; importingSet = true }.buttonStyle(.borderedProminent)
+                }
+            }.padding(24).frame(width: 420)
+        }
+        .fileImporter(isPresented: $importingSet, allowedContentTypes: [.outerview, .zip]) { result in
+            sharingBusy = true
+            Task {
+                defer { sharingBusy = false }
+                do {
+                    let url = try result.get()
+                    let imported = try await Task.detached {
+                        let scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= StoredZIP.maximumSize else { throw ArchiveError.tooLarge }
+                        return try TrainingArchive.decode(Data(contentsOf: url))
+                    }.value
+                    if blindImport {
+                        try library.save(imported)
+                        importSummary = "\(imported.groups.reduce(0) { $0 + $1.questions.count }) questions imported across \(imported.groups.count) groups."
+                    } else { draft = imported }
+                } catch { libraryError = error.localizedDescription }
+            }
+        }
+        .fileExporter(isPresented: $exportingSet, document: exportDocument, contentType: .outerview, defaultFilename: exportName) { result in
+            if case .failure(let error) = result { libraryError = error.localizedDescription }
+            exportDocument = nil
+        }
+        .alert("Import Complete", isPresented: Binding(get: { importSummary != nil }, set: { if !$0 { importSummary = nil } })) {
+            Button("OK", role: .cancel) { importSummary = nil }
+        } message: { Text(importSummary ?? "") }
+    }
+
+    private func exportSet(_ set: SetDraft) {
+        sharingBusy = true
+        Task {
+            defer { sharingBusy = false }
+            do {
+                let assets = try AssetStorage.applicationStorage()
+                let data = try await Task.detached { try TrainingArchive.export(set, assets: assets) }.value
+                exportDocument = SharedSetDocument(data: data)
+                exportName = set.title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+                exportingSet = true
+            } catch { libraryError = error.localizedDescription }
         }
     }
 
@@ -131,7 +189,7 @@ struct ContentView: View {
                 }
                 VStack(spacing: 8) {
                     welcomeAction("Create a Training Set…", icon: "plus") { draft = SetDraft() }
-                    welcomeAction("Import a Shared Set…", icon: "square.and.arrow.down") { notice = true }
+                    welcomeAction("Import a Shared Set…", icon: "square.and.arrow.down") { blindImport = false; importOptions = true }
                     welcomeAction("Explore a Sample", icon: "play") {
                         let sample = SetDraft.sample
                         do { try library.save(sample); openSet(sample.id) }
@@ -180,6 +238,7 @@ struct ContentView: View {
                                 }.buttonStyle(.plain)
                                     .contextMenu {
                                         Button("Edit…") { draft = set }
+                                        Button("Export Training Set…") { exportSet(set) }
                                         Button("Delete…", role: .destructive) { deletion = set }
                                     }
                                 Divider().padding(.leading, 52)
