@@ -21,13 +21,14 @@ edit or delete it. Deletion cascades to its records and cleans up unused assets.
 The library lives under the sandbox's Application Support/OuterView directory:
 `Library.store` holds metadata; `Assets/<set UUID>/images` and `videos` hold media.
 Cleanup runs after successful changes and at startup to recover interrupted cleanup.
-PDF cropping, shared-set import/export, camera recording, and video export are
+PDF selection, page navigation, rectangular cropping, and saved passage previews
+are implemented. Shared-set import/export, camera recording, and video export are
 not wired up yet. Recording remains disabled.
 
 ## Development checkpoints
 
 Commit each completed implementation pass after its relevant checks pass.
-Pass 1 (persistence) is complete. Next: PDF selection, page navigation, and cropping.
+Passes 1–2 (persistence and PDF preparation) are complete. Next: session flow.
 
 Run the `OuterViewTests` target for persistence/reopen, ordering, recording
 preservation, cascading deletion, asset cleanup, and path validation coverage.

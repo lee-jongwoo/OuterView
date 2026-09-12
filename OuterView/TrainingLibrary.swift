@@ -136,12 +136,22 @@ struct TrainingLibrary {
     static let schema = Schema([TrainingSet.self, PassageGroup.self, Question.self, Take.self])
     let context: ModelContext
 
-    func save(_ draft: SetDraft) throws {
+    func save(_ input: SetDraft, storage: AssetStorage? = nil) throws {
+        var draft = input
         guard !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !draft.groups.isEmpty,
               draft.groups.allSatisfy({ !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   !$0.questions.isEmpty && $0.questions.allSatisfy { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }) else {
             throw LibraryError.invalidDraft
+        }
+        // Stage new crops before touching the database. Failed saves leave the
+        // previous references intact; orphan staging files are swept at startup.
+        for index in draft.groups.indices {
+            if let data = draft.groups[index].imageData {
+                let assets = try storage ?? AssetStorage.applicationStorage()
+                draft.groups[index].imagePath = try assets.write(data, setID: draft.id, kind: "images", extension: "png")
+                draft.groups[index].imageData = nil
+            }
         }
         do {
             let existing = try context.fetch(FetchDescriptor<TrainingSet>()).first { $0.id == draft.id }
