@@ -9,6 +9,7 @@ struct PracticeWorkspace: View {
     @State private var journal: RecordingJournal?
     @State private var saveError: String?
     @State private var playing: Take?
+    @State private var exportingTake: Take?
     @State private var deviceSettings = false
     private var locked: Bool { progress.isLocked || capture.locked }
     private var activeTakes: [Take] {
@@ -78,7 +79,7 @@ struct PracticeWorkspace: View {
                             }
                         } else {
                             ContentUnavailableView("Ready when you are", systemImage: "rectangle.stack",
-                                description: Text("Start this group to reveal its first question. Take your time before recording."))
+                                description: Text(group.imagePath == nil ? "Start this group to reveal its first question. Take your time before recording." : "Start this group to reveal its passage. Press Next when you’re ready for the questions."))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -137,6 +138,7 @@ struct PracticeWorkspace: View {
                                         Text(SessionProgress.clock(take.durationSeconds)).monospacedDigit()
                                         HStack {
                                             Button("Play", systemImage: "play.fill") { playing = take }
+                                            Button("Export", systemImage: "square.and.arrow.up") { exportingTake = take }
                                             Button("Retry", systemImage: "arrow.counterclockwise") { startRecording() }
                                                 .disabled(capture.state != .ready)
                                         }.disabled(locked)
@@ -205,8 +207,16 @@ struct PracticeWorkspace: View {
             if state == .saving { progress.beginSaving() }
             if (state == .ready || state == .idle) && capture.completed == nil && progress.isLocked { progress.finishSaving() }
         }
-        .onDisappear { capture.engine.shutdown(); RecordingLifetime.shared.locked = false }
+        .onDisappear { capture.shutdown(); RecordingLifetime.shared.locked = false }
         .sheet(item: $playing) { TakePlayer(take: $0) }
+        .sheet(item: $exportingTake) { take in
+            if let index = questionIndex {
+                VideoExportSheet(take: take, question: group.questions[index].text,
+                    groupNumber: groupIndex + 1, questionNumber: index + 1,
+                    takeNumber: (Array(activeTakes.reversed()).firstIndex(where: { $0.id == take.id }) ?? 0) + 1,
+                    setTitle: set.title)
+            }
+        }
         .alert("Recording Error", isPresented: Binding(get: { capture.error != nil }, set: { if !$0 { capture.error = nil } })) {
             Button("OK", role: .cancel) { capture.error = nil }
         } message: { Text(capture.error ?? "") }
@@ -220,6 +230,7 @@ struct PracticeWorkspace: View {
             journal = pending
             saveError = nil
             progress.beginRecording()
+            RecordingLifetime.shared.locked = true
             capture.record(to: store.movieURL(pending.id))
         } catch { capture.error = error.localizedDescription }
     }

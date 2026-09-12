@@ -128,11 +128,16 @@ nonisolated struct TrainingManifest: Codable {
 nonisolated enum TrainingArchive {
     static func export(_ draft: SetDraft, assets: AssetStorage) throws -> Data {
         var files: [(String, Data)] = []
+        var totalBytes = 0
         let groups = try draft.groups.enumerated().map { index, group in
             var path: String?
             if let source = group.imagePath {
                 path = "images/\(index + 1).png"
-                files.append((path!, try Data(contentsOf: assets.url(for: source))))
+                let url = try assets.url(for: source)
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? StoredZIP.maximumSize
+                guard size <= StoredZIP.maximumSize - totalBytes - 5 * 1024 * 1024 else { throw ArchiveError.tooLarge }
+                totalBytes += size
+                files.append((path!, try Data(contentsOf: url)))
             }
             return TrainingManifest.Group(label: group.label, order: index, image: path,
                 questions: group.questions.enumerated().map { TrainingManifest.Entry(text: $0.element.text, order: $0.offset) })

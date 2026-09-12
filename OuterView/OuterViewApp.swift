@@ -37,6 +37,7 @@ struct OuterViewApp: App {
 }
 
 private struct VisibilitySettings: View {
+    @AppStorage("exportQuality") private var exportQuality = ExportQuality.balanced.rawValue
     @AppStorage("showPassage") private var showPassage = true
     @AppStorage("showQuestion") private var showQuestion = true
 
@@ -50,9 +51,14 @@ private struct VisibilitySettings: View {
             } footer: {
                 Text("Applies to all training sets during practice. Content is only shown after you reach its reveal stage.")
             }
+            Section("Video Export") {
+                Picker("Default quality", selection: $exportQuality) {
+                    ForEach(ExportQuality.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 220)
+        .frame(width: 440, height: 320)
         .navigationTitle("Settings")
     }
 }

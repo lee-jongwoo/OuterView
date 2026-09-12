@@ -95,6 +95,7 @@ nonisolated final class CaptureEngine: NSObject, AVCaptureFileOutputRecordingDel
 final class CaptureController: ObservableObject {
     enum State { case idle, preparing, ready, starting, recording, saving }
     let engine = CaptureEngine()
+    private var enableGeneration = UUID()
     @Published var state: State = .idle
     @Published var error: String?
     @Published var completed: RecordedMovie?
@@ -137,20 +138,32 @@ final class CaptureController: ObservableObject {
     func refreshDevices() {
         cameras = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
         microphones = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices
-        if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = cameras.first?.uniqueID ?? "" }
-        if !microphones.contains(where: { $0.uniqueID == microphoneID }) { microphoneID = microphones.first?.uniqueID ?? "" }
+        if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = AVCaptureDevice.default(for: .video)?.uniqueID ?? cameras.first?.uniqueID ?? "" }
+        if !microphones.contains(where: { $0.uniqueID == microphoneID }) { microphoneID = AVCaptureDevice.default(for: .audio)?.uniqueID ?? microphones.first?.uniqueID ?? "" }
     }
     func enable() async {
         guard !locked else { return }
         state = .preparing
+        let generation = UUID()
+        enableGeneration = generation
         do {
-            let video = await AVCaptureDevice.requestAccess(for: .video)
-            let audio = await AVCaptureDevice.requestAccess(for: .audio)
-            guard video && audio else { throw CaptureFailure.permission }
+            guard await AVCaptureDevice.requestAccess(for: .video) else { throw CaptureFailure.permission }
+            guard enableGeneration == generation else { return }
+            guard await AVCaptureDevice.requestAccess(for: .audio) else { throw CaptureFailure.permission }
+            guard enableGeneration == generation else { return }
             refreshDevices()
             try await engine.configure(camera: cameraID, microphone: microphoneID)
+            guard enableGeneration == generation else { engine.shutdown(); return }
             state = .ready
-        } catch { self.error = error.localizedDescription; state = .idle }
+        } catch {
+            guard enableGeneration == generation else { return }
+            self.error = error.localizedDescription; state = .idle
+        }
+    }
+    func shutdown() {
+        enableGeneration = UUID()
+        engine.shutdown()
+        if !locked { state = .idle }
     }
     func record(to url: URL) {
         guard state == .ready else { return }
@@ -183,7 +196,7 @@ struct CameraPreview: NSViewRepresentable {
     final class PreviewSurface: NSView {
         let preview = AVCaptureVideoPreviewLayer()
         override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true; layer = preview }
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        required init?(coder: NSCoder) { super.init(coder: coder); wantsLayer = true; layer = preview }
         override func layout() { super.layout(); preview.frame = bounds }
     }
 }
