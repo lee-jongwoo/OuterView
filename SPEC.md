@@ -12,6 +12,9 @@ Distribution target: standalone Xcode project, sandboxed macOS app. Channel
 (GitHub release / DMG vs. App Store) is undecided and should not constrain
 architecture.
 
+Minimum OS: macOS 26.0, using the native Liquid Glass appearance. The v1
+interface is English only; user-authored content supports Unicode, including Korean.
+
 ---
 
 ## Data Model (SwiftData)
@@ -23,6 +26,7 @@ Hierarchy: `TrainingSet` → `PassageGroup` (ordered) → `Question` (ordered) �
 final class TrainingSet {
     var title: String              // e.g. "Yonsei 2024 - Humanities"
     var createdAt: Date
+    var lastOpenedAt: Date?       // local recency; nil until first opened
     var items: [PassageGroup]      // single ordered list — the full session sequence
 }
 
@@ -73,7 +77,9 @@ Notes for implementation:
 **Primary path (v1, must work reliably):**
 1. User imports a PDF (scanned handout).
 2. Manual UI: user crops out the passage region as an image (per `PassageGroup`,
-   optional) and types in the associated question(s) as plain text.
+   optional) and types in the associated question(s) as plain text. Each group
+   supports one rectangular crop from one PDF page; multi-crop/multi-page
+   passages are out of scope for v1.
 3. This becomes the source of truth — no unattended/automatic step required for v1.
 
 **Optional future assist (not required for v1, do not block v1 on this):**
@@ -86,10 +92,19 @@ Notes for implementation:
 - Default behavior: after import, the user can preview/review the full set
   (needed to catch cropping/transcription errors, and reasonable since most
   importers built the set themselves or are reviewing someone else's work).
-- Optional "blind import" toggle: user picks a file and imports without previewing
+- Optional "blind import" toggle for prepared training-set files: user picks a file and imports without previewing
   contents — only a summary count is shown (e.g. "14 questions imported across
   5 groups"). Off by default. Exists because this app may be shared with friends
   who import sets someone else prepared for them.
+- Raw PDF preparation requires manual cropping/transcription and does not offer
+  blind import.
+
+**Training-set sharing (v1):**
+- Users can export prepared training sets and import sets shared by friends.
+  Shared sets include passage images and questions, without recordings.
+- Format: a `.outerview` ZIP archive
+  containing a versioned `manifest.json` and passage images. The manifest stores
+  the set title, group labels, question text, and explicit ordering.
 
 ---
 
@@ -107,12 +122,14 @@ Notes for implementation:
 4. Press **Record**: starts recording + a recording-elapsed timer (counts up,
    no cutoff — no auto-stop-on-timeout for v1; a time-warning/bell feature is
    explicitly deferred, not part of this build).
-5. Press **Next** while recording: stops and saves the current take (associated
-   with the current `Question`), then advances to the next question in the group
-   (or ends the group if it was the last question). "Next" and "Stop" are the
-   same action while a recording is active — this should be reflected visually
-   (e.g. different color/label) rather than looking like neutral navigation.
-6. Repeat through all questions in the group, then return to deck view (or
+5. Press **Stop**: stops and saves the current take associated with the current
+   `Question`, remaining on that question. **Record / Stop** is a separate
+   control from **Previous / Next**.
+6. When not recording, **Previous / Next** lets the user navigate freely without
+   requiring a take. While recording, disable both navigation controls and other
+   in-app navigation that would change the active question/group/set. Keep
+   navigation disabled while the take finishes saving.
+7. Repeat through all questions in the group, then return to deck view (or
    advance to the next group — either is fine, use judgment).
 
 Each take is independent and retryable — recording a new take for the same
@@ -123,34 +140,66 @@ per question; nothing is auto-deleted.
 
 ## Visibility Controls
 
-- Per-session (not global preference, not baked into set data) toggle buttons —
-  small "eye" icons — for:
-  - Passage visibility
-  - Question text visibility
-  - Camera mirror visibility
-- These exist because different schools/interview formats show or withhold
-  passages/questions differently, and the user wants to flip this per-session
-  without editing set data or digging into preferences.
+- Passage and question text visibility are persistent global preferences in the
+  Settings pane. These preferences never bypass the session's reveal stages.
+- Camera mirror and timer visibility each have a small eye button at the corner
+  of that item. These are independent per-session controls, with the eye button
+  remaining available when content is hidden so it can be restored.
+- Hiding a timer or camera preview affects display only; elapsed timing and
+  recording continue normally.
 
 ---
 
-## Layout (SwiftUI, three-panel)
+## Launch Screen and Workspace
 
-- **Top bar**: context-sensitive controls — Start / Next / Record-Stop. Buttons
+The app opens to an Xcode-style launch screen listing the user's training sets.
+This is the entry point to the app, separate from the practice workspace and
+its passage-group deck view.
+
+- Use a compact 820 × 520 welcome window with branding/actions on the left
+  and recent training sets on the right. Expand for practice and restore the
+  compact size when returning home.
+- Sort sets by last-opened date, newest first; never-opened sets follow, newest
+  created first. Update lastOpenedAt whenever a set opens. This is local metadata,
+  not part of the shared training-set archive.
+- List training sets by title, with summary metadata such as group/question
+  counts, without exposing passage images or question text.
+- Provide actions to create a training set from a PDF and import a prepared
+  training-set file shared by someone else.
+- Opening a training set enters its workspace in deck view; it does not
+  automatically reveal a passage/question or start recording.
+- Provide a way to return to the training-set launch screen from the workspace.
+  Disable this navigation during recording and saving, like other navigation
+  that changes the active set.
+- When there are no training sets, show an empty state with the same creation
+  and import actions.
+
+For v1, use one main window: opening a set replaces the launch screen with its
+workspace, and a Training Sets button returns home. The workspace has a central
+passage/question area, narrow group sidebar, camera/timer on the right, and a
+collapsible takes strip below. Visual details will be reviewed in the UI shell.
+
+## Practice Workspace Layout (SwiftUI)
+
+- **Top bar**: context-sensitive controls — Start, Previous / Next, and a separate
+  Record / Stop control. Previous / Next is disabled during recording and saving. Buttons
   change based on current stage (deck / passage-reveal / question-reveal /
   recording).
 - **Left panel**: passage-group index for the current training set, showing
   `label` only. Used for navigation between groups, not content preview.
-- **Right panel**: passive display only — camera mirror + whichever timer is
+- **Center panel**: passage and question content, subject to reveal stage and
+  global visibility preferences.
+- **Right panel**: camera mirror + whichever timer is
   currently active (reading-elapsed or recording-elapsed depending on stage).
-  No buttons live here.
+  Each item has its own corner eye button; recording/navigation controls stay
+  in the top bar.
 - **Bottom panel**: list of takes for the *currently active question only*
   (not a global/running log — swaps as the active question changes). Each take
   supports playback and retry (re-record a new take) from this panel.
 
 ---
 
-## Export
+## Video Export
 
 - Export happens **per take, on demand** — not automatically after every
   recording, and not a single "export everything" action for v1.
@@ -177,8 +226,8 @@ per question; nothing is auto-deleted.
 - Any self-analysis feedback (speaking pace, filler-word detection, eye-contact
   scoring, etc.) — this app is a recording/organization workflow tool for
   tutor-driven feedback, not an automated coaching product.
-- Global per-set persisted visibility settings — visibility is a per-session
-  toggle, not stored data.
+- Per-set persisted visibility settings — passage/question visibility lives in
+  global preferences; camera/timer visibility is per-session.
 
 ---
 

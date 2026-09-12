@@ -1,32 +1,37 @@
-//
-//  OuterViewApp.swift
-//  OuterView
-//
-//  Created by 이종우 on 9/12/26.
-//
-
 import SwiftUI
-import SwiftData
 
 @main
 struct OuterViewApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
     var body: some Scene {
-        WindowGroup {
+        Window("OuterView", id: "main") {
             ContentView()
         }
-        .modelContainer(sharedModelContainer)
+        .defaultSize(width: 820, height: 520)
+        .windowResizability(.contentSize)
+
+        Settings {
+            VisibilitySettings()
+        }
+    }
+}
+
+private struct VisibilitySettings: View {
+    @AppStorage("showPassage") private var showPassage = true
+    @AppStorage("showQuestion") private var showQuestion = true
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Show passages", isOn: $showPassage)
+                Toggle("Show question text", isOn: $showQuestion)
+            } header: {
+                Text("Practice Content")
+            } footer: {
+                Text("Applies to all training sets during practice. Content is only shown after you reach its reveal stage.")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 440, height: 220)
+        .navigationTitle("Settings")
     }
 }
