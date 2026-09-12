@@ -28,7 +28,9 @@ not wired up yet. Recording remains disabled.
 ## Development checkpoints
 
 Commit each completed implementation pass after its relevant checks pass.
-Passes 1–2 (persistence and PDF preparation) are complete. Next: session flow.
+Passes 1–3 (persistence, PDF preparation, and session flow) are complete.
+Passage groups now reveal the passage first with a reading timer; question-only
+groups skip directly to questions. Next: camera capture and take review.
 
 Run the `OuterViewTests` target for persistence/reopen, ordering, recording
 preservation, cascading deletion, asset cleanup, and path validation coverage.

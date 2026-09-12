@@ -4,8 +4,9 @@ struct PracticeWorkspace: View {
     let set: SetDraft
     let goHome: () -> Void
     let edit: () -> Void
-    @State private var groupIndex = 0
-    @State private var questionIndex: Int?
+    @State private var progress = SessionProgress()
+    private var groupIndex: Int { progress.groupIndex }
+    private var questionIndex: Int? { progress.questionIndex }
     @AppStorage("showPassage") private var showPassage = true
     @AppStorage("showQuestion") private var showQuestion = true
     @State private var showCamera = true
@@ -20,7 +21,7 @@ struct PracticeWorkspace: View {
                 Text(set.title).font(.headline).padding(.horizontal)
                 Text("PASSAGE GROUPS").font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary).padding(.horizontal)
-                List(selection: Binding(get: { groupIndex }, set: { groupIndex = $0; questionIndex = nil })) {
+                List(selection: Binding(get: { groupIndex }, set: { progress.selectGroup($0, count: set.groups.count) })) {
                     ForEach(set.groups.indices, id: \.self) { index in
                         Label(set.groups[index].label, systemImage: "rectangle.stack").tag(index)
                     }
@@ -42,15 +43,24 @@ struct PracticeWorkspace: View {
                             Text("QUESTION \(index + 1) OF \(group.questions.count)")
                                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             if showQuestion {
-                                Text(group.questions[index].text).font(.system(size: 28, weight: .medium))
-                                    .textSelection(.enabled)
+                                ScrollView {
+                                    Text(group.questions[index].text).font(.system(size: 28, weight: .medium))
+                                        .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                                }
                             } else {
                                 Label("Question hidden", systemImage: "eye.slash").foregroundStyle(.secondary)
                             }
                             Spacer()
+                            if let path = group.imagePath, showPassage {
+                                ScrollView { PassageImage(path: path) }.frame(maxHeight: 240)
+                            }
+                        } else if progress.stage == .reading {
+                            Text("READING").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             if showPassage {
-                                Label("This group has no passage", systemImage: "doc")
-                                    .font(.callout).foregroundStyle(.secondary)
+                                ScrollView { PassageImage(path: group.imagePath) }
+                            } else {
+                                ContentUnavailableView("Passage hidden", systemImage: "eye.slash",
+                                    description: Text("Passage visibility can be changed in Settings. Press Next when ready."))
                             }
                         } else {
                             ContentUnavailableView("Ready when you are", systemImage: "rectangle.stack",
@@ -72,12 +82,13 @@ struct PracticeWorkspace: View {
                             .overlay(alignment: .topTrailing) {
                                 visibilityButton("Camera", visible: $showCamera).padding(10)
                             }
-                        VStack(spacing: 10) {
-                            Text(showTimer ? "00:00" : "—:—")
-                                .font(.system(size: 40, weight: .light, design: .monospaced))
-                                .accessibilityLabel(showTimer ? "Recording elapsed, zero seconds" : "Timer hidden")
-                            Text(showTimer ? "Recording elapsed" : "Timer hidden")
-                                .font(.caption).foregroundStyle(.secondary)
+                        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                            VStack(spacing: 10) {
+                                Text(showTimer ? SessionProgress.clock(progress.elapsed(at: timeline.date)) : "—:—")
+                                    .font(.system(size: 36, weight: .light, design: .monospaced))
+                                Text(showTimer ? (progress.stage == .reading ? "Reading elapsed" : "Recording elapsed") : "Timer hidden")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.top, 42).padding(.bottom, 20)
@@ -112,15 +123,17 @@ struct PracticeWorkspace: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 if let index = questionIndex {
-                    Button("Previous", systemImage: "chevron.left") { questionIndex = index - 1 }
-                        .disabled(index == 0)
+                    Button("Previous", systemImage: "chevron.left") { progress.previous(hasPassage: group.imagePath != nil) }
+                        .disabled(index == 0 && group.imagePath == nil)
                     Button(index == group.questions.count - 1 ? "Finish Group" : "Next", systemImage: "chevron.right") {
-                        questionIndex = index + 1 < group.questions.count ? index + 1 : nil
+                        progress.next(questionCount: group.questions.count)
                     }
                     Button("Record", systemImage: "record.circle") { }
                         .disabled(true).help("Recording will be connected in the next implementation pass")
+                } else if progress.stage == .reading {
+                    Button("Next", systemImage: "chevron.right") { progress.next(questionCount: group.questions.count) }
                 } else {
-                    Button("Start", systemImage: "play.fill") { questionIndex = 0 }
+                    Button("Start", systemImage: "play.fill") { progress.start(hasPassage: group.imagePath != nil) }
                         .buttonStyle(.borderedProminent)
                 }
             }
