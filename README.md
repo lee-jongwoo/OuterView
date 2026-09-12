@@ -22,15 +22,17 @@ The library lives under the sandbox's Application Support/OuterView directory:
 `Library.store` holds metadata; `Assets/<set UUID>/images` and `videos` hold media.
 Cleanup runs after successful changes and at startup to recover interrupted cleanup.
 PDF selection, page navigation, rectangular cropping, and saved passage previews
-are implemented. Shared-set import/export, camera recording, and video export are
-not wired up yet. Recording remains disabled.
+are implemented. Camera/microphone selection, live preview, recording, per-question playback, and
+retry are implemented. Use Enable Camera to grant access. Failed saves can be
+retried, and pending recordings are recovered on the next launch. Shared-set
+import/export and video export are next.
 
 ## Development checkpoints
 
 Commit each completed implementation pass after its relevant checks pass.
 Passes 1–3 (persistence, PDF preparation, and session flow) are complete.
 Passage groups now reveal the passage first with a reading timer; question-only
-groups skip directly to questions. Next: camera capture and take review.
+groups skip directly to questions. Pass 4 adds camera capture, take review, and interrupted-save recovery.
 
 Run the `OuterViewTests` target for persistence/reopen, ordering, recording
 preservation, cascading deletion, asset cleanup, and path validation coverage.

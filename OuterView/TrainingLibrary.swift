@@ -206,7 +206,8 @@ struct TrainingLibrary {
     func cleanupAssets(_ storage: AssetStorage) throws {
         let images = try context.fetch(FetchDescriptor<PassageGroup>()).compactMap(\.imagePath)
         let videos = try context.fetch(FetchDescriptor<Take>()).map(\.videoPath)
-        try storage.removeUnreferenced(keeping: Set(images + videos))
+        let protected = try RecordingStore(context: context, assets: storage).protectedPaths()
+        try storage.removeUnreferenced(keeping: Set(images + videos).union(protected))
     }
 }
 

@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct OuterViewApp: App {
+    @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycle
     private let library: Result<ModelContainer, Error> = Result {
         let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                   appropriateFor: nil, create: true)

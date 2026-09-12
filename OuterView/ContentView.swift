@@ -35,7 +35,7 @@ struct QuestionDraft: Identifiable {
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var models: [TrainingSet]
-    private var sets: [SetDraft] { models.map(SetDraft.init(model:)) }
+    private var sets: [SetDraft] { models.map { SetDraft(model: $0) } }
     private var library: TrainingLibrary { TrainingLibrary(context: modelContext) }
     @State private var libraryError: String?
     @State private var deletion: SetDraft?
@@ -75,7 +75,13 @@ struct ContentView: View {
                 Button("OK", role: .cancel) { libraryError = nil }
             } message: { Text(libraryError ?? "") }
         }
-        .task { cleanupAssets() }
+        .task {
+            do {
+                let failures = await RecordingStore(context: modelContext, assets: try AssetStorage.applicationStorage()).recover()
+                cleanupAssets()
+                if !failures.isEmpty { libraryError = failures.joined(separator: "\n") }
+            } catch { libraryError = error.localizedDescription }
+        }
         .alert("Library Error", isPresented: Binding(get: { libraryError != nil && draft == nil }, set: { if !$0 { libraryError = nil } })) {
             Button("OK", role: .cancel) { libraryError = nil }
         } message: { Text(libraryError ?? "") }

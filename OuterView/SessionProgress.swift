@@ -1,6 +1,6 @@
 import Foundation
 
-struct SessionProgress {
+nonisolated struct SessionProgress {
     enum Stage: Equatable { case deck, reading, question, recording, saving }
     private(set) var stage: Stage = .deck
     private(set) var groupIndex = 0
