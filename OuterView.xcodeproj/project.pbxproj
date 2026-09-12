@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0153157930558933008A1A3E /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 0153157830558933008A1A3E /* README.md */; };
+		0153157B305598D5008A1A3E /* SPEC.md in Resources */ = {isa = PBXBuildFile; fileRef = 0153157A305598CA008A1A3E /* SPEC.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		0153155C30558909008A1A3E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,8 @@
 		0153154C30558908008A1A3E /* OuterView.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OuterView.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0153155B30558909008A1A3E /* OuterViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OuterViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0153156530558909008A1A3E /* OuterViewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OuterViewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0153157830558933008A1A3E /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		0153157A305598CA008A1A3E /* SPEC.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SPEC.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +82,8 @@
 		0153154330558907008A1A3E = {
 			isa = PBXGroup;
 			children = (
+				0153157A305598CA008A1A3E /* SPEC.md */,
+				0153157830558933008A1A3E /* README.md */,
 				0153154E30558908008A1A3E /* OuterView */,
 				0153155E30558909008A1A3E /* OuterViewTests */,
 				0153156830558909008A1A3E /* OuterViewUITests */,
@@ -212,6 +221,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0153157930558933008A1A3E /* README.md in Resources */,
+				0153157B305598D5008A1A3E /* SPEC.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -403,11 +414,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OuterView;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.jongwoo.OuterView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -435,11 +448,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OuterView;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.jongwoo.OuterView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
