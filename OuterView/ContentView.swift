@@ -175,12 +175,16 @@ struct ContentView: View {
         catch { libraryError = error.localizedDescription }
     }
 
+    private static let launchIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
+        .flatMap { NSImage(contentsOf: $0) } ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+
     private var launchScreen: some View {
         HStack(spacing: 0) {
             VStack(spacing: 22) {
                 Spacer(minLength: 10)
-                Image(systemName: "rectangle.on.rectangle.circle.fill")
-                    .font(.system(size: 76)).foregroundStyle(.tint)
+                Image(nsImage: Self.launchIcon)
+                    .resizable().scaledToFit().frame(width: 100, height: 100)
+                    .accessibilityHidden(true)
                 VStack(spacing: 6) {
                     Text("OuterView").font(.system(size: 32, weight: .bold))
                     Text("Interview practice, at your pace.")
@@ -196,8 +200,6 @@ struct ContentView: View {
                     }
                 }.padding(.top, 12)
                 Spacer(minLength: 10)
-                Text("Training sets saved on this Mac")
-                    .font(.caption).foregroundStyle(.tertiary)
             }
             .padding(30).frame(width: 350)
             Divider()
@@ -224,8 +226,11 @@ struct ContentView: View {
                                             Text("\(set.groups.count) groups · \(set.groups.reduce(0) { $0 + $1.questions.count }) questions")
                                                 .font(.caption).foregroundStyle(.secondary)
                                             if let opened = set.lastOpenedAt {
-                                                Text("Opened \(opened.formatted(date: .abbreviated, time: .shortened))")
-                                                    .font(.caption2).foregroundStyle(.tertiary)
+                                                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                                                    Text(opened.formatted(.relative(presentation: .named, unitsStyle: .wide)))
+                                                        .font(.caption2).foregroundStyle(.tertiary)
+                                                        .help("Last opened " + opened.formatted(date: .complete, time: .shortened))
+                                                }
                                             } else {
                                                 Text("Not opened yet").font(.caption2).foregroundStyle(.tertiary)
                                             }
@@ -245,9 +250,6 @@ struct ContentView: View {
                         }.padding(.horizontal, 8)
                     }
                 }
-                Text("Most recently opened first")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.horizontal, 20).padding(.bottom, 20)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.quaternary.opacity(0.2))

@@ -315,7 +315,11 @@ struct PracticeWorkspace: View {
         Button { visible.wrappedValue.toggle() } label: {
             Label("\(visible.wrappedValue ? "Hide" : "Show") \(name.lowercased())", systemImage: visible.wrappedValue ? "eye" : "eye.slash")
                 .labelStyle(.iconOnly)
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .help("\(visible.wrappedValue ? "Hide" : "Show") \(name.lowercased())")
         .accessibilityValue(visible.wrappedValue ? "Visible" : "Hidden")
     }

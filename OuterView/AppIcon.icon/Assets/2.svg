@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024px" height="1024px" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>2 - Layer</title>
+    <defs>
+        <path d="M690.5,122 C784.112265,122 860,197.887735 860,291.5 C860,385.112265 784.112265,461 690.5,461 C596.887735,461 521,385.112265 521,291.5 C521,197.887735 596.887735,122 690.5,122 Z" id="path-1"></path>
+        <path d="M169.5,0 C263.112265,0 339,75.8877349 339,169.5 C339,263.112265 263.112265,339 169.5,339 C75.8877349,339 0,263.112265 0,169.5 C0,75.8877349 75.8877349,0 169.5,0 Z" id="path-2"></path>
+    </defs>
+    <g id="Template---App-Icons" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="2---Layer" xlink:href="#path-1" fill="color(display-p3 0.856 0.726 0.639)">
+            <g id="Frame" transform="translate(521, 122)" xlink:href="#path-2">
+                <use xlink:href="#path-2"></use>
+            </g>
+        </g>
+    </g>
+</svg>
