@@ -278,6 +278,7 @@ struct SetEditor: View {
     @State private var pendingRemoval: (() -> Void)?
     @State private var pdfDocument: PDFDocument?
     @State private var cropping = false
+    @FocusState private var focusedQuestion: UUID?
     let save: (SetDraft) -> Void
 
     init(initial: SetDraft, save: @escaping (SetDraft) -> Void) {
@@ -340,6 +341,7 @@ struct SetEditor: View {
                     }
                 }.padding(20).frame(width: 240)
                 Divider()
+                ScrollViewReader { scroll in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         TextField("Group label", text: $draft.groups[selected].label)
@@ -380,16 +382,25 @@ struct SetEditor: View {
                                     }.disabled(draft.groups[selected].questions.count == 1)
                                 }.labelStyle(.iconOnly)
                                 TextEditor(text: $draft.groups[selected].questions[index].text)
+                                    .focused($focusedQuestion, equals: draft.groups[selected].questions[index].id)
                                     .font(.body).frame(height: 72).padding(8)
                                     .background(.background, in: RoundedRectangle(cornerRadius: 8))
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
-                            }
+                            }.id(draft.groups[selected].questions[index].id)
                         }
                         Button("Add Question", systemImage: "plus") {
-                            draft.groups[selected].questions.append(QuestionDraft())
+                            let question = QuestionDraft()
+                            draft.groups[selected].questions.append(question)
+                            focusedQuestion = question.id
                         }
+                        .keyboardShortcut(.return, modifiers: .command)
+                        .help("Add Question (⌘Return)")
                     }.padding(24)
                 }.id(draft.groups[selected].id)
+                .onChange(of: focusedQuestion) { _, id in
+                    if let id { scroll.scrollTo(id, anchor: .bottom) }
+                }
+                }
             }
         }.frame(width: 900, height: 620)
         .sheet(isPresented: $cropping) {

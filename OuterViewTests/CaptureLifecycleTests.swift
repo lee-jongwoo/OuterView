@@ -73,6 +73,17 @@ struct CaptureLifecycleTests {
         #expect(!engine.isRunning && engine.stopCount == 1)
     }
 
+    @Test func viewRemovalDefersPublishedStateUntilAfterReconciliation() async {
+        let engine = TestCaptureEngine()
+        let controller = CaptureController(engine: engine, requestPermission: { _ in true })
+        await controller.startTraining()?.value
+        let shutdown = controller.shutdownAfterViewRemoval()
+        #expect(controller.trainingActive && controller.state == .ready)
+        await shutdown.value
+        #expect(!controller.trainingActive && controller.state == .idle)
+        #expect(!engine.isRunning)
+    }
+
     @Test func endingDuringPermissionRequestCannotReactivateCamera() async {
         let permissions = CaptureGate()
         let engine = TestCaptureEngine()

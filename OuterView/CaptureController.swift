@@ -242,6 +242,15 @@ final class CaptureController: ObservableObject {
         shutdownTask = Task { await engine.shutdown() }
     }
 
+    @discardableResult
+    func shutdownAfterViewRemoval() -> Task<Void, Never> {
+        // onDisappear can run during SwiftUI reconciliation. Cancel pending
+        // activation immediately, but publish state after that update finishes.
+        activation?.cancel()
+        setupTask?.cancel()
+        return Task { await self.shutdownAndWait() }
+    }
+
     func shutdownAndWait() async {
         shutdown()
         await shutdownTask?.value
@@ -270,7 +279,8 @@ struct CameraPreview: NSViewRepresentable {
         return view
     }
     func updateNSView(_ nsView: PreviewSurface, context: Context) {
-        if let connection = nsView.preview.connection, connection.isVideoMirroringSupported {
+        if let connection = nsView.preview.connection, connection.isVideoMirroringSupported,
+           !connection.isVideoMirrored {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = true
         }

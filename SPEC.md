@@ -203,11 +203,14 @@ continue to block switching.
   Each item has its own corner eye button; recording/navigation controls stay
   in the top bar. Fit the entire camera frame without cropping, with letterboxing
   when its aspect ratio differs from the landscape preview.
-- **Bottom panel**: list of takes for the *currently active question only*
-  (not a global/running log — swaps as the active question changes). Each take
+- **Bottom panel**: takes for the currently active question, or all questions in
+  the selected passage group before Start and during reading, ordered by question
+  then newest take. Playback and export do not require activating the camera.
+  Passage-level browsing and its export sheet do not reveal question text. Each take
   supports playback, export, and retry (re-record a new take) from this panel.
-  Use an IDE-style dock with a persistent height, explicit resize handle, and
-  collapse control. Empty states and question changes do not resize the dock.
+  Use a fixed-height dock with a collapse control and no resize handle.
+  Left-align cards and scroll horizontally on overflow. Empty states and question
+  changes do not resize the dock. Retry is available only in question view.
   Show asynchronously generated, aspect-fit video thumbnails with duration badges.
 
 ---

@@ -191,11 +191,12 @@ struct VideoExportSheet: View {
     let questionNumber: Int
     let takeNumber: Int
     let setTitle: String
+    var showQuestionText = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Export Take").font(.title2.bold())
-            Text(question).lineLimit(4).foregroundStyle(.secondary)
+            if showQuestionText { Text(question).lineLimit(4).foregroundStyle(.secondary) }
             Picker("Video quality", selection: $qualityValue) {
                 ForEach(ExportQuality.allCases) { Text($0.label).tag($0.rawValue) }
             }.disabled(working)

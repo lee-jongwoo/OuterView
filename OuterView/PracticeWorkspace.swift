@@ -3,6 +3,7 @@ import SwiftData
 import AVKit
 
 struct PracticeWorkspace: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @Query private var allTakes: [Take]
     @StateObject private var capture = CaptureController()
@@ -12,9 +13,15 @@ struct PracticeWorkspace: View {
     @State private var exportingTake: Take?
     @State private var deviceSettings = false
     private var locked: Bool { progress.isLocked || capture.locked }
+    private func takes(for questionID: UUID) -> [Take] {
+        allTakes.filter { $0.question?.id == questionID }.sorted {
+            if $0.recordedAt != $1.recordedAt { return $0.recordedAt > $1.recordedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+    }
     private var activeTakes: [Take] {
-        guard let index = questionIndex else { return [] }
-        return allTakes.filter { $0.question?.id == group.questions[index].id }.sorted { $0.recordedAt > $1.recordedAt }
+        if let index = questionIndex { return takes(for: group.questions[index].id) }
+        return group.questions.flatMap { takes(for: $0.id) }
     }
     let set: SetDraft
     let goHome: () -> Void
@@ -27,8 +34,6 @@ struct PracticeWorkspace: View {
     @State private var showCamera = true
     @State private var showTimer = true
     @AppStorage("showTakes") private var showTakes = true
-    @AppStorage("takesPanelHeight") private var takesPanelHeight = 242.0
-    @State private var resizeStart: Double?
 
     private var group: GroupDraft { self.set.groups[groupIndex] }
 
@@ -90,9 +95,13 @@ struct PracticeWorkspace: View {
                         RoundedRectangle(cornerRadius: 16).fill(.quaternary.opacity(0.4))
                             .frame(width: 252, height: 142)
                             .overlay {
-                                if showCamera && capture.state != .idle && capture.state != .preparing {
-                                    CameraPreview(session: capture.engine.session).clipShape(RoundedRectangle(cornerRadius: 16))
-                                } else {
+                                if capture.state != .idle && capture.state != .preparing {
+                                    CameraPreview(session: capture.engine.session)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                        .opacity(showCamera ? 1 : 0)
+                                        .accessibilityHidden(!showCamera)
+                                }
+                                if !showCamera || capture.state == .idle || capture.state == .preparing {
                                     VStack(spacing: 12) {
                                         Image(systemName: showCamera ? "video" : "video.slash").font(.largeTitle)
                                         Text(showCamera ? (capture.state == .preparing ? "Starting camera…" : (progress.isTraining ? "Camera unavailable" : "Camera off")) : "Camera hidden").font(.headline)
@@ -187,14 +196,14 @@ struct PracticeWorkspace: View {
             if state == .saving { progress.beginSaving() }
             if (state == .ready || state == .idle) && capture.completed == nil && progress.isLocked { progress.finishSaving() }
         }
-        .onDisappear { capture.shutdown(); RecordingLifetime.shared.locked = false }
+        .onDisappear { capture.shutdownAfterViewRemoval(); RecordingLifetime.shared.locked = false }
         .sheet(item: $playing) { TakePlayer(take: $0) }
         .sheet(item: $exportingTake) { take in
-            if let index = questionIndex {
+            if let index = group.questions.firstIndex(where: { $0.id == take.question?.id }) {
                 VideoExportSheet(take: take, question: group.questions[index].text,
                     groupNumber: groupIndex + 1, questionNumber: index + 1,
-                    takeNumber: (Array(activeTakes.reversed()).firstIndex(where: { $0.id == take.id }) ?? 0) + 1,
-                    setTitle: set.title)
+                    takeNumber: (Array(takes(for: group.questions[index].id).reversed()).firstIndex(where: { $0.id == take.id }) ?? 0) + 1,
+                    setTitle: set.title, showQuestionText: questionIndex != nil && showQuestion)
             }
         }
         .alert("Recording Error", isPresented: Binding(get: { capture.error != nil }, set: { if !$0 { capture.error = nil } })) {
@@ -204,37 +213,29 @@ struct PracticeWorkspace: View {
 
     private var takesPanel: some View {
         VStack(spacing: 0) {
-            if showTakes {
-                Rectangle().fill(.quaternary).frame(height: 5)
-                    .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+            Divider()
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { showTakes.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.bottomthird.inset.filled")
+                    Text("Takes").font(.headline)
+                    if let questionIndex {
+                        Text("Question \(questionIndex + 1) · \(activeTakes.count) takes").foregroundStyle(.secondary)
+                    } else {
+                        Text("Passage · \(activeTakes.count) takes").foregroundStyle(.secondary)
                     }
-                    .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                        .onChanged { value in
-                            if resizeStart == nil { resizeStart = takesPanelHeight }
-                            takesPanelHeight = min(300, max(242, (resizeStart ?? 242) - value.translation.height))
-                        }
-                        .onEnded { _ in resizeStart = nil })
-                    .accessibilityLabel("Resize takes panel")
-                    .accessibilityAdjustableAction { direction in
-                        takesPanelHeight = min(300, max(242, takesPanelHeight + (direction == .increment ? 20 : -20)))
-                    }
-            } else { Divider() }
-            HStack(spacing: 8) {
-                Button { showTakes.toggle() } label: {
-                    Label(showTakes ? "Hide takes" : "Show takes", systemImage: "rectangle.bottomthird.inset.filled")
-                        .labelStyle(.iconOnly)
-                }.buttonStyle(.plain).help(showTakes ? "Hide takes" : "Show takes")
-                Text("Takes").font(.headline)
-                if let questionIndex {
-                    Text("Question \(questionIndex + 1) · \(activeTakes.count) takes").foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(showTakes ? 0 : -180))
                 }
-                Spacer()
-                Button { showTakes.toggle() } label: {
-                    Image(systemName: showTakes ? "chevron.down" : "chevron.up")
-                }.buttonStyle(.plain).accessibilityLabel(showTakes ? "Collapse takes" : "Expand takes")
-            }.padding(.horizontal, 16).frame(height: 36)
+                .padding(.horizontal, 16).frame(height: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showTakes ? "Collapse takes" : "Expand takes")
+            .accessibilityValue(showTakes ? "Expanded" : "Collapsed")
+            .help(showTakes ? "Collapse takes" : "Expand takes")
             if showTakes {
                 Divider()
                 if let saveError {
@@ -246,16 +247,25 @@ struct PracticeWorkspace: View {
                 if activeTakes.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "film.stack").font(.title2)
-                        Text(questionIndex == nil ? "Reveal a question to review its takes." : "No takes yet. Record an answer when you’re ready.")
+                        Text("No takes yet. Record an answer when you’re ready.")
                     }.foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ScrollView([.horizontal, .vertical]) {
+                    ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: 12) {
                             ForEach(activeTakes) { take in
                                 VStack(alignment: .leading, spacing: 8) {
                                     Button { playing = take } label: {
                                         TakeThumbnail(path: take.videoPath)
                                             .frame(width: 208, height: 117)
+                                            .overlay(alignment: .topLeading) {
+                                                if questionIndex == nil,
+                                                   let index = group.questions.firstIndex(where: { $0.id == take.question?.id }) {
+                                                    Text("Question \(index + 1)")
+                                                        .font(.caption.weight(.medium)).padding(5)
+                                                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 4))
+                                                        .foregroundStyle(.white).padding(6)
+                                                }
+                                            }
                                             .overlay(alignment: .bottomTrailing) {
                                                 Text(SessionProgress.clock(take.durationSeconds))
                                                     .font(.caption.monospacedDigit()).padding(4)
@@ -267,17 +277,22 @@ struct PracticeWorkspace: View {
                                     HStack {
                                         Button("Play", systemImage: "play.fill") { playing = take }
                                         Button("Export", systemImage: "square.and.arrow.up") { exportingTake = take }
-                                        Button("Retry", systemImage: "arrow.counterclockwise") { startRecording() }
-                                            .disabled(capture.state != .ready)
+                                        if questionIndex != nil {
+                                            Button("Retry", systemImage: "arrow.counterclockwise") { startRecording() }
+                                                .disabled(capture.state != .ready)
+                                        }
                                     }.controlSize(.small).disabled(locked)
                                 }.frame(width: 208)
                             }
-                        }.padding(12)
-                    }.frame(maxHeight: .infinity)
+                        }.padding(12).frame(maxHeight: .infinity, alignment: .topLeading)
+                    }
+                    .defaultScrollAnchor(.leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
-        .frame(height: showTakes ? min(300, max(242, takesPanelHeight)) : 37)
+        .frame(height: showTakes ? (saveError == nil ? 246 : 294) : 41, alignment: .top)
+        .clipped()
         .background(.quaternary.opacity(0.12))
     }
 
@@ -338,14 +353,18 @@ struct TakePlayer: View {
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            if let player { VideoPlayer(player: player) }
+            if let player { TakePlaybackSurface(player: player) }
             else { ContentUnavailableView(error ?? "Loading recording…", systemImage: "film") }
         }.padding(20).frame(width: 800, height: 550)
         .task {
             do {
                 let url = try AssetStorage.applicationStorage().url(for: take.videoPath)
                 guard FileManager.default.fileExists(atPath: url.path) else { throw RecordingStoreError.invalidMovie }
-                player = AVPlayer(url: url)
+                let asset = AVURLAsset(url: url)
+                guard try await asset.load(.isPlayable),
+                      !(try await asset.loadTracks(withMediaType: .video)).isEmpty else { throw RecordingStoreError.invalidMovie }
+                try Task.checkCancellation()
+                player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
                 player?.play()
             } catch { self.error = error.localizedDescription }
         }
@@ -397,4 +416,24 @@ struct TakeThumbnail: View {
         return try await generator.image(at: .zero).image
     }
 
+}
+
+
+/// Use AVKit's native macOS view directly; avoid the crashing SwiftUI VideoPlayer bridge.
+struct TakePlaybackSurface: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .inline
+        view.videoGravity = .resizeAspect
+        view.player = player
+        return view
+    }
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        if view.player !== player { view.player = player }
+    }
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player?.pause()
+        view.player = nil
+    }
 }

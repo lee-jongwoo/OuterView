@@ -2,6 +2,8 @@
 
 A native macOS interview-preparation app. Requires macOS 26.0 or later.
 See [SPEC.md](SPEC.md) for the product specification.
+For automated PDF conversion and external producers, see
+[the `.outerview` format guide](OUTERVIEW_FORMAT.md).
 
 ## v1 workflow
 
@@ -17,7 +19,9 @@ See [SPEC.md](SPEC.md) for the product specification.
    capture off. Navigation and closing are blocked while recording/saving.
    Otherwise, close/quit waits asynchronously for camera cleanup.
 4. Browse video thumbnails and play or retry takes in the current question’s
-   takes dock. Drag its top divider to resize; collapse it with the header control.
+   takes dock. Collapse it with the header control; overflow scrolls horizontally.
+   Before Start and while reading, the selected group shows takes from all its
+   questions without revealing question text. Playback and export work with the camera off.
    Its height stays stable when navigating between questions. **Export** writes
    an H.264 MP4 with a three-second question title card, sequential filename,
    and selectable 540p, 720p (default), or 1080p quality.
