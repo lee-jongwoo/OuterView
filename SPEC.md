@@ -137,9 +137,9 @@ Notes for implementation:
 
 **End Training** returns to the group deck and turns capture off. Finishing a
 group, changing groups, opening the editor, or returning to Training Sets also
-turns capture off. End Training is disabled during recording/saving. Closing or
-quitting when not recording/saving asynchronously releases capture devices before
-completing; late permission/setup results cannot reactivate ended sessions.
+turns capture off. End Training and native window dismissal are disabled during
+recording/saving. Closing releases capture asynchronously; quitting awaits cleanup.
+Late permission/setup results cannot reactivate ended sessions.
 
 Each take is independent and retryable — recording a new take for the same
 question does not overwrite or delete previous takes. Multiple takes accumulate
@@ -185,7 +185,8 @@ its passage-group deck view.
 
 Use a separate welcome window and one training window. Opening a set hides the
 welcome window; Training Sets closes the workspace and reopens the welcome
-window. Switching sets ends the previous camera session. Recording and saving
+window. The training scene uses SwiftUI’s principal window-manager role for native
+full-screen entry and exit; window delegates and collection behavior are not overridden. Switching sets ends the previous camera session. Recording and saving
 continue to block switching.
 
 ## Practice Workspace Layout (SwiftUI)

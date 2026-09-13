@@ -34,10 +34,12 @@ struct OuterViewApp: App {
         Window("Training", id: "training") {
             if case .success(let container) = library {
                 TrainingWindow().environment(windows).modelContainer(container)
+                    .windowFullScreenBehavior(.enabled)
             }
         }
+        .windowManagerRole(.principal)
         .defaultSize(width: 1180, height: 780)
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 

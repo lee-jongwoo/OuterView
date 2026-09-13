@@ -11,13 +11,14 @@ For automated PDF conversion and external producers, see
    select a handout, browse pages, and drag one passage rectangle per group.
 2. Save the set. Open it from the recent-sets launch screen in a separate training
    window and press **Start**. Each window retains its own size and position.
+   The training window supports native macOS full screen.
    Groups with passages begin with a reading timer; **Next** reveals questions.
 3. Use **Devices** to select a camera/microphone. Hardware stays off on the deck;
    **Start** activates it for training (and requests permission if needed).
    **Record** and **Stop** save an independent take without advancing.
    **End Training**, **Finish Group**, changing groups, or leaving practice turns
    capture off. Navigation and closing are blocked while recording/saving.
-   Otherwise, close/quit waits asynchronously for camera cleanup.
+   Closing releases capture asynchronously; quitting waits for that cleanup.
 4. Browse video thumbnails and play or retry takes in the current question’s
    takes dock. Collapse it with the header control; overflow scrolls horizontally.
    Before Start and while reading, the selected group shows takes from all its

@@ -188,7 +188,8 @@ struct PracticeWorkspace: View {
                 }
             }
         }
-        .background(RecordingCloseGuard(capture: capture, locked: locked).frame(width: 0, height: 0))
+        .windowDismissBehavior(locked ? .disabled : .enabled)
+        .background(RecordingLifetimeRegistration(capture: capture, locked: locked).frame(width: 0, height: 0))
         .onReceive(capture.$completed) { movie in
             if movie != nil { DispatchQueue.main.async { saveCompletedTake() } }
         }
