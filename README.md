@@ -9,9 +9,12 @@ See [SPEC.md](SPEC.md) for the product specification.
    select a handout, browse pages, and drag one passage rectangle per group.
 2. Save the set. Open it from the recent-sets launch screen and press **Start**.
    Groups with passages begin with a reading timer; **Next** reveals questions.
-3. Use **Devices** to select a camera/microphone and **Enable Camera** to grant
-   access. **Record** and **Stop** save an independent take without advancing.
-   Navigation and closing are blocked while recording/saving.
+3. Use **Devices** to select a camera/microphone. Hardware stays off on the deck;
+   **Start** activates it for training (and requests permission if needed).
+   **Record** and **Stop** save an independent take without advancing.
+   **End Training**, **Finish Group**, changing groups, or leaving practice turns
+   capture off. Navigation and closing are blocked while recording/saving.
+   Otherwise, close/quit waits asynchronously for camera cleanup.
 4. Play or retry takes from the current question’s takes panel. **Export** writes
    an H.264 MP4 with a three-second question title card, sequential filename,
    and selectable 540p, 720p (default), or 1080p quality.
@@ -38,7 +41,8 @@ Under the sandbox’s Application Support/OuterView directory:
 Failed take saves offer **Retry Save**. On launch, playable pending movies are
 reattached to their questions. Unreadable interrupted movies are retained and
 reported. Cleanup preserves journal-protected media. Camera access is shut down
-when leaving a workspace, including when permission/setup finishes late.
+when training ends or you leave a workspace, including when permission/setup
+finishes late. Device selection alone does not activate capture.
 
 ## Shared-set format
 
@@ -61,7 +65,8 @@ its relevant checks pass.
 
 The `OuterViewTests` target covers persistence/reopen, editing and ordering,
 record preservation, cascading deletion, asset cleanup, crop coordinates,
-session transitions and recording locks, interrupted-save journals, ZIP
+session transitions and recording locks, camera activation/cancellation and
+shutdown races, interrupted-save journals, ZIP
 interoperability and invalid imports, and real synthetic H.264/AAC export.
 Media tests verify title duration, decoded frames, silent title audio, audible
 answer audio, and cancellation; exported frames/movie are attached to test results.

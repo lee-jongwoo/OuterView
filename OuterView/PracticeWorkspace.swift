@@ -36,12 +36,12 @@ struct PracticeWorkspace: View {
                 Text(set.title).font(.headline).padding(.horizontal)
                 Text("PASSAGE GROUPS").font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary).padding(.horizontal)
-                List(selection: Binding(get: { groupIndex }, set: { progress.selectGroup($0, count: set.groups.count) })) {
+                List(selection: Binding(get: { groupIndex }, set: { endTraining(); progress.selectGroup($0, count: set.groups.count) })) {
                     ForEach(set.groups.indices, id: \.self) { index in
                         Label(set.groups[index].label, systemImage: "rectangle.stack").tag(index)
                     }
                 }.disabled(locked)
-                Button("Edit Training Set", systemImage: "pencil", action: edit).disabled(locked).padding()
+                Button("Edit Training Set", systemImage: "pencil") { endTraining(); edit() }.disabled(locked).padding()
             }.padding(.top, 20)
                 .frame(width: 220)
                 .frame(maxHeight: .infinity)
@@ -93,8 +93,8 @@ struct PracticeWorkspace: View {
                                 } else {
                                     VStack(spacing: 12) {
                                         Image(systemName: showCamera ? "video" : "video.slash").font(.largeTitle)
-                                        Text(showCamera ? "Camera not enabled" : "Camera hidden").font(.headline)
-                                        if showCamera { Text("Use Enable Camera in the toolbar").font(.caption) }
+                                        Text(showCamera ? (progress.isTraining ? "Camera unavailable" : "Camera off") : "Camera hidden").font(.headline)
+                                        if showCamera { Text(progress.isTraining ? "Use Retry Camera in the toolbar" : "Press Start to begin training").font(.caption) }
                                     }.foregroundStyle(.secondary)
                                 }
                             }
@@ -155,7 +155,7 @@ struct PracticeWorkspace: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button("Training Sets", systemImage: "chevron.left", action: goHome).disabled(locked)
+                Button("Training Sets", systemImage: "chevron.left") { endTraining(); goHome() }.disabled(locked)
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button("Devices", systemImage: "video.badge.ellipsis") { capture.refreshDevices(); deviceSettings = true }
@@ -168,19 +168,24 @@ struct PracticeWorkspace: View {
                             Picker("Microphone", selection: $capture.microphoneID) {
                                 ForEach(capture.microphones, id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
                             }
-                            Button("Apply Devices") { deviceSettings = false; Task { await capture.enable() } }
+                            Button("Apply Devices") { deviceSettings = false; capture.retryCamera() }
                         }.padding(20).frame(width: 360)
                     }
-                if capture.state == .idle {
-                    Button("Enable Camera", systemImage: "video") { Task { await capture.enable() } }
+                if progress.isTraining && capture.state == .idle {
+                    Button("Retry Camera", systemImage: "video") { capture.retryCamera() }
                 } else if capture.state == .preparing {
                     ProgressView().controlSize(.small)
+                }
+                if progress.isTraining {
+                    Button("End Training", systemImage: "xmark.circle") { endTraining() }
+                        .disabled(locked)
                 }
                 if let index = questionIndex {
                     Button("Previous", systemImage: "chevron.left") { progress.previous(hasPassage: group.imagePath != nil) }
                         .disabled(locked || (index == 0 && group.imagePath == nil))
                     Button(index == group.questions.count - 1 ? "Finish Group" : "Next", systemImage: "chevron.right") {
                         progress.next(questionCount: group.questions.count)
+                        if !progress.isTraining { capture.shutdown() }
                     }.disabled(locked)
                     if capture.state == .recording || capture.state == .starting {
                         Button("Stop", systemImage: "stop.fill") { progress.beginSaving(); capture.stop() }
@@ -194,12 +199,15 @@ struct PracticeWorkspace: View {
                 } else if progress.stage == .reading {
                     Button("Next", systemImage: "chevron.right") { progress.next(questionCount: group.questions.count) }
                 } else {
-                    Button("Start", systemImage: "play.fill") { progress.start(hasPassage: group.imagePath != nil) }
+                    Button("Start", systemImage: "play.fill") {
+                        progress.start(hasPassage: group.imagePath != nil)
+                        capture.startTraining()
+                    }
                         .buttonStyle(.borderedProminent)
                 }
             }
         }
-        .background(RecordingCloseGuard(locked: locked).frame(width: 0, height: 0))
+        .background(RecordingCloseGuard(capture: capture, locked: locked).frame(width: 0, height: 0))
         .onReceive(capture.$completed) { movie in
             if movie != nil { DispatchQueue.main.async { saveCompletedTake() } }
         }
@@ -220,6 +228,12 @@ struct PracticeWorkspace: View {
         .alert("Recording Error", isPresented: Binding(get: { capture.error != nil }, set: { if !$0 { capture.error = nil } })) {
             Button("OK", role: .cancel) { capture.error = nil }
         } message: { Text(capture.error ?? "") }
+    }
+
+    private func endTraining() {
+        guard !locked else { return }
+        progress.endTraining()
+        capture.shutdown()
     }
 
     private func startRecording() {

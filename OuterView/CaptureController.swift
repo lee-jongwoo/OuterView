@@ -19,8 +19,28 @@ enum CaptureFailure: LocalizedError {
     }
 }
 
+/// Shared with the capture queue so a cancelled permission/setup request cannot
+/// turn hardware back on after training has ended.
+nonisolated final class CaptureActivation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.withLock { cancelled } }
+    func cancel() { lock.withLock { cancelled = true } }
+}
+
+nonisolated protocol CaptureSessionEngine: AnyObject, Sendable {
+    var session: AVCaptureSession { get }
+    var finished: (@Sendable (URL, String?) -> Void)? { get set }
+    var started: (@Sendable () -> Void)? { get set }
+    var interrupted: (@Sendable (String) -> Void)? { get set }
+    func configure(camera: String, microphone: String, activation: CaptureActivation) async throws
+    func record(to url: URL)
+    func stopRecording()
+    func shutdown() async
+}
+
 /// AVCaptureSession is configured and started exclusively on this queue.
-nonisolated final class CaptureEngine: NSObject, AVCaptureFileOutputRecordingDelegate, @unchecked Sendable {
+nonisolated final class CaptureEngine: NSObject, CaptureSessionEngine, AVCaptureFileOutputRecordingDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "dev.jongwoo.OuterView.capture")
     private let output = AVCaptureMovieFileOutput()
@@ -40,48 +60,74 @@ nonisolated final class CaptureEngine: NSObject, AVCaptureFileOutputRecordingDel
             self.queue.async {
                 if self.session.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).contains(where: { !$0.device.isConnected }) {
                     if self.output.isRecording { self.output.stopRecording() }
-                    self.interrupted?("A recording device disconnected. Reconnect it and enable the camera again.")
+                    self.interrupted?("A recording device disconnected. Reconnect it and retry the camera during training.")
                 }
             }
         })
     }
 
-    func configure(camera: String, microphone: String) async throws {
+    func configure(camera: String, microphone: String, activation: CaptureActivation) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 do {
                     guard !self.output.isRecording else { throw CaptureFailure.busy }
+                    guard !activation.isCancelled else { throw CancellationError() }
+                    // Configuration and start form one queued operation. A shutdown
+                    // can never slip between commitConfiguration and startRunning.
+                    self.stopAndReleaseInputs()
                     self.session.beginConfiguration()
-                    defer { self.session.commitConfiguration() }
-                    self.session.inputs.forEach { self.session.removeInput($0) }
-                    guard let video = AVCaptureDevice(uniqueID: camera), let audio = AVCaptureDevice(uniqueID: microphone) else { throw CaptureFailure.device }
-                    for device in [video, audio] {
-                        let input = try AVCaptureDeviceInput(device: device)
-                        guard self.session.canAddInput(input) else { throw CaptureFailure.device }
-                        self.session.addInput(input)
+                    do {
+                        guard let video = AVCaptureDevice(uniqueID: camera), let audio = AVCaptureDevice(uniqueID: microphone) else { throw CaptureFailure.device }
+                        for device in [video, audio] {
+                            let input = try AVCaptureDeviceInput(device: device)
+                            guard self.session.canAddInput(input) else { throw CaptureFailure.device }
+                            self.session.addInput(input)
+                        }
+                        if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
+                        if !self.session.outputs.contains(self.output) {
+                            guard self.session.canAddOutput(self.output) else { throw CaptureFailure.device }
+                            self.session.addOutput(self.output)
+                        }
+                        if let connection = self.output.connection(with: .video), connection.isVideoMirroringSupported {
+                            connection.automaticallyAdjustsVideoMirroring = false
+                            connection.isVideoMirrored = false
+                        }
+                        self.session.commitConfiguration()
+                    } catch {
+                        self.session.commitConfiguration()
+                        throw error
                     }
-                    if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
-                    if !self.session.outputs.contains(self.output) {
-                        guard self.session.canAddOutput(self.output) else { throw CaptureFailure.device }
-                        self.session.addOutput(self.output)
-                    }
-                    // Source movies remain unmirrored; only the live preview is mirrored.
-                    if let connection = self.output.connection(with: .video), connection.isVideoMirroringSupported {
-                        connection.automaticallyAdjustsVideoMirroring = false
-                        connection.isVideoMirrored = false
-                    }
+                    guard !activation.isCancelled else { throw CancellationError() }
+                    self.session.startRunning()
+                    guard !activation.isCancelled else { throw CancellationError() }
+                    guard self.session.isRunning else { throw CaptureFailure.device }
                     continuation.resume()
-                } catch { continuation.resume(throwing: error) }
+                } catch {
+                    self.stopAndReleaseInputs()
+                    continuation.resume(throwing: error)
+                }
             }
         }
-        await withCheckedContinuation { continuation in
-            queue.async { self.session.startRunning(); continuation.resume() }
-        }
+    }
+
+    /// Always called on the capture queue, never while a take is recording.
+    private func stopAndReleaseInputs() {
+        if session.isRunning { session.stopRunning() }
+        session.beginConfiguration()
+        session.inputs.forEach { session.removeInput($0) }
+        session.commitConfiguration()
     }
 
     func record(to url: URL) { queue.async { self.output.startRecording(to: url, recordingDelegate: self) } }
     func stopRecording() { queue.async { if self.output.isRecording { self.output.stopRecording() } } }
-    func shutdown() { queue.async { if !self.output.isRecording { self.session.stopRunning() } } }
+    func shutdown() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                if !self.output.isRecording { self.stopAndReleaseInputs() }
+                continuation.resume()
+            }
+        }
+    }
 
     func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) { started?() }
     func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo fileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
@@ -94,8 +140,12 @@ nonisolated final class CaptureEngine: NSObject, AVCaptureFileOutputRecordingDel
 @MainActor
 final class CaptureController: ObservableObject {
     enum State { case idle, preparing, ready, starting, recording, saving }
-    let engine = CaptureEngine()
-    private var enableGeneration = UUID()
+    let engine: any CaptureSessionEngine
+    private let requestPermission: @Sendable (AVMediaType) async -> Bool
+    private var activation: CaptureActivation?
+    private var setupTask: Task<Void, Never>?
+    private var shutdownTask: Task<Void, Never>?
+    @Published private(set) var trainingActive = false
     @Published var state: State = .idle
     @Published var error: String?
     @Published var completed: RecordedMovie?
@@ -105,7 +155,10 @@ final class CaptureController: ObservableObject {
     @Published var microphones: [AVCaptureDevice] = []
     var locked: Bool { state == .starting || state == .recording || state == .saving }
 
-    init() {
+    init(engine: any CaptureSessionEngine = CaptureEngine(),
+         requestPermission: @escaping @Sendable (AVMediaType) async -> Bool = { await AVCaptureDevice.requestAccess(for: $0) }) {
+        self.engine = engine
+        self.requestPermission = requestPermission
         refreshDevices()
         engine.started = { [weak self] in
             Task { @MainActor [weak self] in
@@ -141,30 +194,59 @@ final class CaptureController: ObservableObject {
         if !cameras.contains(where: { $0.uniqueID == cameraID }) { cameraID = AVCaptureDevice.default(for: .video)?.uniqueID ?? cameras.first?.uniqueID ?? "" }
         if !microphones.contains(where: { $0.uniqueID == microphoneID }) { microphoneID = AVCaptureDevice.default(for: .audio)?.uniqueID ?? microphones.first?.uniqueID ?? "" }
     }
-    func enable() async {
-        guard !locked else { return }
+    @discardableResult
+    func startTraining() -> Task<Void, Never>? {
+        guard !trainingActive, !locked else { return nil }
+        trainingActive = true
+        return retryCamera()
+    }
+
+    /// Device selection on the deck is passive. Only an active training session
+    /// may request permissions, configure devices, or start the camera.
+    @discardableResult
+    func retryCamera() -> Task<Void, Never>? {
+        guard trainingActive, !locked else { return nil }
+        activation?.cancel()
+        setupTask?.cancel()
+        let request = CaptureActivation()
+        activation = request
         state = .preparing
-        let generation = UUID()
-        enableGeneration = generation
-        do {
-            guard await AVCaptureDevice.requestAccess(for: .video) else { throw CaptureFailure.permission }
-            guard enableGeneration == generation else { return }
-            guard await AVCaptureDevice.requestAccess(for: .audio) else { throw CaptureFailure.permission }
-            guard enableGeneration == generation else { return }
-            refreshDevices()
-            try await engine.configure(camera: cameraID, microphone: microphoneID)
-            guard enableGeneration == generation else { engine.shutdown(); return }
-            state = .ready
-        } catch {
-            guard enableGeneration == generation else { return }
-            self.error = error.localizedDescription; state = .idle
+        setupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                guard await self.requestPermission(.video) else { throw CaptureFailure.permission }
+                guard !request.isCancelled else { return }
+                guard await self.requestPermission(.audio) else { throw CaptureFailure.permission }
+                guard !request.isCancelled else { return }
+                try await self.engine.configure(camera: self.cameraID, microphone: self.microphoneID, activation: request)
+                guard !request.isCancelled else { return }
+                self.state = .ready
+            } catch {
+                guard !request.isCancelled else { return }
+                self.error = error.localizedDescription
+                self.state = .idle
+            }
         }
+        return setupTask
     }
+
     func shutdown() {
-        enableGeneration = UUID()
-        engine.shutdown()
-        if !locked { state = .idle }
+        guard !locked else { return }
+        trainingActive = false
+        activation?.cancel()
+        activation = nil
+        setupTask?.cancel()
+        setupTask = nil
+        state = .idle
+        let engine = engine
+        shutdownTask = Task { await engine.shutdown() }
     }
+
+    func shutdownAndWait() async {
+        shutdown()
+        await shutdownTask?.value
+    }
+
     func record(to url: URL) {
         guard state == .ready else { return }
         state = .starting
@@ -192,6 +274,9 @@ struct CameraPreview: NSViewRepresentable {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = true
         }
+    }
+    static func dismantleNSView(_ view: PreviewSurface, coordinator: ()) {
+        view.preview.session = nil
     }
     final class PreviewSurface: NSView {
         let preview = AVCaptureVideoPreviewLayer()

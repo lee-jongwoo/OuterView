@@ -7,6 +7,8 @@ nonisolated struct SessionProgress {
     private(set) var questionIndex: Int?
     private(set) var timerStartedAt: Date?
     private(set) var frozenElapsed: TimeInterval = 0
+    var isTraining: Bool { stage != .deck }
+    mutating func endTraining() { guard !isLocked else { return }; reset() }
     var isLocked: Bool { stage == .recording || stage == .saving }
 
     mutating func selectGroup(_ index: Int, count: Int) {

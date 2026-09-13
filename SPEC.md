@@ -114,6 +114,9 @@ Notes for implementation:
    `label` only (e.g. "Ethics," "Case study 3") — no passage or question content
    visible. This is navigation, not preview.
 2. User selects a group and presses **Start**.
+   - Start activates the camera/microphone for this training session, requesting
+     permission if needed. The launch screen and group deck keep capture off;
+     choosing devices does not activate them.
    - If the group has a passage image: it's revealed, with a reading-elapsed
      timer (counts up, no cutoff).
    - If the group has no passage image: skip straight to the first question
@@ -131,6 +134,12 @@ Notes for implementation:
    navigation disabled while the take finishes saving.
 7. Repeat through all questions in the group, then return to deck view (or
    advance to the next group — either is fine, use judgment).
+
+**End Training** returns to the group deck and turns capture off. Finishing a
+group, changing groups, opening the editor, or returning to Training Sets also
+turns capture off. End Training is disabled during recording/saving. Closing or
+quitting when not recording/saving asynchronously releases capture devices before
+completing; late permission/setup results cannot reactivate ended sessions.
 
 Each take is independent and retryable — recording a new take for the same
 question does not overwrite or delete previous takes. Multiple takes accumulate
