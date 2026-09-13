@@ -223,10 +223,10 @@ continue to block switching.
 - Export output:
   - Sequential, human-readable filename (question order within its group/set),
     not device-default names like `IMG_4021.mov`.
-  - Short title-card caption at the start of the exported video (first few
-    seconds only, then it clears) showing the question text — since the
-    recipient (tutor) already knows the questions and just needs quick context
-    while browsing/playing, not a persistent overlay.
+  - A floating, rounded, translucent bottom banner shows the question number
+    and text over the first two seconds, fading out over the final 0.2 seconds.
+    The recorded video and audio start immediately; no title card or extra time
+    is inserted. Preserve the original answer duration and audio synchronization.
   - Configurable video quality/compression: default to a modest encode (e.g.
     H.264, ~720p, conservative bitrate) since exports go to a tutor for content
     review, not archival or high-fidelity viewing. Quality should be a user-facing

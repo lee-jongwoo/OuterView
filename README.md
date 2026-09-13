@@ -24,7 +24,7 @@ For automated PDF conversion and external producers, see
    Before Start and while reading, the selected group shows takes from all its
    questions without revealing question text. Playback and export work with the camera off.
    Its height stays stable when navigating between questions. **Export** writes
-   an H.264 MP4 with a three-second question title card, sequential filename,
+   an H.264 MP4 with a two-second bottom question caption, sequential filename,
    and selectable 540p, 720p (default), or 1080p quality.
 5. Right-click a set on the launch screen to edit, export, or delete it. Import a
    friend’s `.outerview` file with a full review or blind import showing only counts.

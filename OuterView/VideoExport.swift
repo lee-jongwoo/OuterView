@@ -22,128 +22,86 @@ nonisolated enum VideoExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidMovie: "This recording could not be exported. Check that its video file is available."
-        case .titleTooLong: "The question is too long for a readable title card. Shorten its text before exporting."
+        case .titleTooLong: "The question is too long for a readable caption. Shorten its text before exporting."
         case .writer: "The video encoder could not create the export."
         case .timeout: "The video encoder stopped responding. Try exporting again."
         }
     }
 }
 
-nonisolated enum TitleMovie {
-    static func pixelBuffer(text: String, label: String, size: CGSize) throws -> CVPixelBuffer {
-        var buffer: CVPixelBuffer?
-        let attributes = [kCVPixelBufferCGImageCompatibilityKey: true, kCVPixelBufferCGBitmapContextCompatibilityKey: true] as CFDictionary
-        guard CVPixelBufferCreate(kCFAllocatorDefault, Int(size.width), Int(size.height), kCVPixelFormatType_32BGRA, attributes, &buffer) == kCVReturnSuccess,
-              let buffer else { throw VideoExportError.writer }
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        guard let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: Int(size.width), height: Int(size.height),
-                                      bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue) else { throw VideoExportError.writer }
-        context.setFillColor(CGColor(red: 0.96, green: 0.97, blue: 0.99, alpha: 1))
-        context.fill(CGRect(origin: .zero, size: size))
-        let margin = size.width * 0.07
-        let available = CGSize(width: size.width - margin * 2, height: size.height * 0.62)
-        var fontSize = size.height / 15
+nonisolated enum ExportCaption {
+    static func image(text: String, label: String, size: CGSize) throws -> CGImage {
+        guard let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw VideoExportError.writer }
+        let margin = size.width * 0.05
+        let padding = size.height * 0.025
+        let width = size.width - 2 * margin - 2 * padding
+        let maxHeight = size.height * 0.24
+        var fontSize = size.height * 0.042
         var setter: CTFramesetter?
         var measured = CGSize.zero
-        while fontSize >= 14 {
-            let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
-            let attributes: [NSAttributedString.Key: Any] = [NSAttributedString.Key(kCTFontAttributeName as String): font,
-                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0.1, alpha: 1)]
-            let candidate = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
-            measured = CTFramesetterSuggestFrameSizeWithConstraints(candidate, CFRange(location: 0, length: 0), nil,
-                CGSize(width: available.width, height: .greatestFiniteMagnitude), nil)
-            if measured.height <= available.height { setter = candidate; break }
-            fontSize -= 2
+        while fontSize >= size.height * 0.03 {
+            let candidate = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, fontSize, nil),
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1)]))
+            measured = CTFramesetterSuggestFrameSizeWithConstraints(candidate, CFRange(), nil,
+                CGSize(width: width, height: .greatestFiniteMagnitude), nil)
+            if measured.height <= maxHeight { setter = candidate; break }
+            fontSize -= 1
         }
         guard let setter else { throw VideoExportError.titleTooLong }
-        let bodyPath = CGPath(rect: CGRect(x: margin, y: (size.height - measured.height) / 2,
-                                          width: available.width, height: measured.height + 4), transform: nil)
-        CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), bodyPath, nil), context)
-        let heading = NSAttributedString(string: label.uppercased(), attributes: [
-            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica-Bold" as CFString, size.height / 32, nil),
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(red: 0.15, green: 0.35, blue: 0.65, alpha: 1)])
-        let headingSetter = CTFramesetterCreateWithAttributedString(heading)
-        let headingPath = CGPath(rect: CGRect(x: margin, y: size.height * 0.83, width: available.width, height: size.height * 0.08), transform: nil)
-        CTFrameDraw(CTFramesetterCreateFrame(headingSetter, CFRange(location: 0, length: 0), headingPath, nil), context)
-        return buffer
-    }
-
-    static func write(text: String, label: String, size: CGSize, to url: URL, seconds: Double = 3) async throws {
-        let buffer = try pixelBuffer(text: text, label: label, size: size)
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 2_000_000]])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
-        guard writer.canAdd(input) else { throw VideoExportError.writer }
-        writer.add(input)
-        guard writer.startWriting() else { throw writer.error ?? VideoExportError.writer }
-        writer.startSession(atSourceTime: .zero)
-        do {
-            let frames = max(1, Int(seconds * 30))
-            for frame in 0..<frames {
-                let deadline = Date().addingTimeInterval(15)
-                while !input.isReadyForMoreMediaData {
-                    try Task.checkCancellation()
-                    guard writer.status == .writing else { throw writer.error ?? VideoExportError.writer }
-                    guard Date() < deadline else { throw VideoExportError.timeout }
-                    try await Task.sleep(for: .milliseconds(5))
-                }
-                try Task.checkCancellation()
-                guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)) else {
-                    throw writer.error ?? VideoExportError.writer
-                }
-            }
-            writer.endSession(atSourceTime: CMTime(seconds: seconds, preferredTimescale: 600))
-            input.markAsFinished()
-            await writer.finishWriting()
-            guard writer.status == .completed else { throw writer.error ?? VideoExportError.writer }
-        } catch { writer.cancelWriting(); throw error }
+        let headingHeight = size.height * 0.034
+        let bottom = size.height * 0.045
+        let bodyHeight = ceil(measured.height) + 4
+        let height = padding * 2 + bodyHeight + headingHeight + padding * 0.5
+        let panel = CGRect(x: margin, y: bottom, width: size.width - margin * 2, height: height)
+        context.setFillColor(CGColor(gray: 0.04, alpha: 0.78))
+        context.addPath(CGPath(roundedRect: panel, cornerWidth: padding, cornerHeight: padding, transform: nil))
+        context.fillPath()
+        let body = CGPath(rect: CGRect(x: margin + padding, y: bottom + padding,
+            width: width, height: bodyHeight), transform: nil)
+        CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(), body, nil), context)
+        let heading = CTFramesetterCreateWithAttributedString(NSAttributedString(string: label, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica-Bold" as CFString, size.height * 0.026, nil),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0.8, alpha: 1)]))
+        let headingPath = CGPath(rect: CGRect(x: margin + padding, y: bottom + padding + bodyHeight + padding * 0.5,
+            width: width, height: headingHeight), transform: nil)
+        CTFrameDraw(CTFramesetterCreateFrame(heading, CFRange(), headingPath, nil), context)
+        guard let image = context.makeImage() else { throw VideoExportError.writer }
+        return image
     }
 }
 
 @MainActor
 final class VideoExporter: ObservableObject {
     @Published var progress = 0.0
-    @Published var phase = "Preparing title card…"
+    @Published var phase = "Preparing caption…"
     private var session: AVAssetExportSession?
     func cancel() { session?.cancelExport() }
 
     func export(source: URL, question: String, label: String, quality: ExportQuality, destination: URL) async throws {
         progress = 0
-        phase = "Preparing title card…"
-        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory); session = nil }
-        let titleURL = directory.appending(path: "title.mov")
-        try await TitleMovie.write(text: question, label: label, size: quality.size, to: titleURL)
+        phase = "Preparing caption…"
+        defer { session = nil }
+        let captionImage = try ExportCaption.image(text: question, label: label, size: quality.size)
         try Task.checkCancellation()
-        let original = AVURLAsset(url: source), title = AVURLAsset(url: titleURL)
-        guard let sourceTrack = try await original.loadTracks(withMediaType: .video).first,
-              let titleTrack = try await title.loadTracks(withMediaType: .video).first else { throw VideoExportError.invalidMovie }
+        let original = AVURLAsset(url: source)
+        guard let sourceTrack = try await original.loadTracks(withMediaType: .video).first else { throw VideoExportError.invalidMovie }
         let originalDuration = try await original.load(.duration)
-        let titleDuration = try await title.load(.duration)
         guard originalDuration.seconds.isFinite, originalDuration.seconds > 0 else { throw VideoExportError.invalidMovie }
         let composition = AVMutableComposition()
         guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { throw VideoExportError.writer }
-        try video.insertTimeRange(CMTimeRange(start: .zero, duration: titleDuration), of: titleTrack, at: .zero)
-        try video.insertTimeRange(CMTimeRange(start: .zero, duration: originalDuration), of: sourceTrack, at: titleDuration)
+        try video.insertTimeRange(CMTimeRange(start: .zero, duration: originalDuration), of: sourceTrack, at: .zero)
         if let sourceAudio = try await original.loadTracks(withMediaType: .audio).first,
            let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
             let range = try await sourceAudio.load(.timeRange)
             let usable = CMTimeRangeGetIntersection(range, otherRange: CMTimeRange(start: .zero, duration: originalDuration))
-            try audio.insertTimeRange(usable, of: sourceAudio, at: titleDuration + usable.start)
+            try audio.insertTimeRange(usable, of: sourceAudio, at: usable.start)
         }
-        var first = AVVideoCompositionInstruction.Configuration()
-        first.timeRange = CMTimeRange(start: .zero, duration: titleDuration)
-        var firstLayer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: video)
-        firstLayer.setTransform(.identity, at: .zero)
-        first.layerInstructions = [AVVideoCompositionLayerInstruction(configuration: firstLayer)]
-        var second = AVVideoCompositionInstruction.Configuration()
-        second.timeRange = CMTimeRange(start: titleDuration, duration: originalDuration)
-        second.backgroundColor = CGColor(gray: 0, alpha: 1)
+        var instruction = AVVideoCompositionInstruction.Configuration()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: originalDuration)
+        instruction.backgroundColor = CGColor(gray: 0, alpha: 1)
         let transform = try await sourceTrack.load(.preferredTransform)
         let natural = try await sourceTrack.load(.naturalSize)
         let bounds = CGRect(origin: .zero, size: natural).applying(transform)
@@ -153,12 +111,31 @@ final class VideoExporter: ObservableObject {
             .concatenating(CGAffineTransform(scaleX: factor, y: factor))
             .concatenating(CGAffineTransform(translationX: (quality.size.width - bounds.width * factor) / 2,
                                              y: (quality.size.height - bounds.height * factor) / 2))
-        var secondLayer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: video)
-        secondLayer.setTransform(fitted, at: titleDuration)
-        second.layerInstructions = [AVVideoCompositionLayerInstruction(configuration: secondLayer)]
+        var layerInstruction = AVVideoCompositionLayerInstruction.Configuration(assetTrack: video)
+        layerInstruction.setTransform(fitted, at: .zero)
+        instruction.layerInstructions = [AVVideoCompositionLayerInstruction(configuration: layerInstruction)]
+        let parent = CALayer(), videoLayer = CALayer(), captionLayer = CALayer()
+        parent.frame = CGRect(origin: .zero, size: quality.size)
+        videoLayer.frame = parent.bounds
+        captionLayer.frame = parent.bounds
+        captionLayer.contents = captionImage
+        captionLayer.opacity = 0
+        parent.addSublayer(videoLayer)
+        parent.addSublayer(captionLayer)
+        let visibility = CAKeyframeAnimation(keyPath: "opacity")
+        visibility.values = [1, 1, 0]
+        visibility.keyTimes = [0, 0.9, 1]
+        visibility.duration = 2
+        visibility.beginTime = AVCoreAnimationBeginTimeAtZero
+        visibility.isRemovedOnCompletion = false
+        visibility.fillMode = .both
+        captionLayer.add(visibility, forKey: "openingCaption")
+        let animationTool = AVVideoCompositionCoreAnimationTool(configuration: .init(
+            postProcessingAsVideoLayer: videoLayer, containingLayer: parent))
         let videoComposition = AVVideoComposition(configuration: .init(
+            animationTool: animationTool,
             frameDuration: CMTime(value: 1, timescale: 30),
-            instructions: [AVVideoCompositionInstruction(configuration: first), AVVideoCompositionInstruction(configuration: second)],
+            instructions: [AVVideoCompositionInstruction(configuration: instruction)],
             renderSize: quality.size))
         guard let exporter = AVAssetExportSession(asset: composition, presetName: quality.preset) else { throw VideoExportError.writer }
         session = exporter
@@ -200,7 +177,7 @@ struct VideoExportSheet: View {
             Picker("Video quality", selection: $qualityValue) {
                 ForEach(ExportQuality.allCases) { Text($0.label).tag($0.rawValue) }
             }.disabled(working)
-            Text("Adds a three-second question title card, then plays the full answer. Exports an H.264 MP4.")
+            Text("Shows the question in a bottom caption for the first two seconds. Exports the full answer as an H.264 MP4.")
                 .font(.caption).foregroundStyle(.secondary)
             if working { ProgressView(exporter.phase, value: exporter.progress) }
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
