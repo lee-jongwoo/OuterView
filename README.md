@@ -84,5 +84,5 @@ Visual checks cover the welcome screen, editor and PDF crop, passage/question
 navigation, visibility controls, device selection, sharing/blind import, and
 exported English/Korean title frames. Physical camera/microphone capture and
 unplugging devices still require a hardware acceptance check; automated media
-checks use synthetic recordings. Distribution packaging/notarization is not
-part of this implementation pass.
+checks use synthetic recordings. See [RELEASING.md](RELEASING.md) for DMG
+packaging, signing, notarization, and GitHub release instructions.
