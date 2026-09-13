@@ -7,7 +7,8 @@ See [SPEC.md](SPEC.md) for the product specification.
 
 1. Create a training set. Add groups and questions; use **Crop from PDF…** to
    select a handout, browse pages, and drag one passage rectangle per group.
-2. Save the set. Open it from the recent-sets launch screen and press **Start**.
+2. Save the set. Open it from the recent-sets launch screen in a separate training
+   window and press **Start**. Each window retains its own size and position.
    Groups with passages begin with a reading timer; **Next** reveals questions.
 3. Use **Devices** to select a camera/microphone. Hardware stays off on the deck;
    **Start** activates it for training (and requests permission if needed).
@@ -15,12 +16,15 @@ See [SPEC.md](SPEC.md) for the product specification.
    **End Training**, **Finish Group**, changing groups, or leaving practice turns
    capture off. Navigation and closing are blocked while recording/saving.
    Otherwise, close/quit waits asynchronously for camera cleanup.
-4. Play or retry takes from the current question’s takes panel. **Export** writes
+4. Browse video thumbnails and play or retry takes in the current question’s
+   takes dock. Drag its top divider to resize; collapse it with the header control.
+   Its height stays stable when navigating between questions. **Export** writes
    an H.264 MP4 with a three-second question title card, sequential filename,
    and selectable 540p, 720p (default), or 1080p quality.
 5. Right-click a set on the launch screen to edit, export, or delete it. Import a
    friend’s `.outerview` file with a full review or blind import showing only counts.
 
+The landscape camera mirror fits the full video frame without cropping.
 Camera and timer eye controls affect their displays only. Passage/question
 visibility and default export quality live in Settings (`⌘,`).
 **Explore a Sample** creates a saved example set for trying the workflow.

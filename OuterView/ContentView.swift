@@ -40,8 +40,9 @@ struct ContentView: View {
     private var library: TrainingLibrary { TrainingLibrary(context: modelContext) }
     @State private var libraryError: String?
     @State private var deletion: SetDraft?
-    @State private var activeID: UUID?
-    @State private var workspaceRevision = 0
+    @Environment(TrainingWindows.self) private var windows
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @State private var draft: SetDraft?
     @State private var importOptions = false
     @State private var importingSet = false
@@ -53,30 +54,14 @@ struct ContentView: View {
     @State private var sharingBusy = false
 
     var body: some View {
-        GeometryReader { geometry in
-            Group {
-            if let index = sets.firstIndex(where: { $0.id == activeID }) {
-                PracticeWorkspace(set: sets[index], goHome: { activeID = nil }, edit: { draft = sets[index] })
-                    .id("\(sets[index].id)-\(workspaceRevision)")
-            } else {
-                launchScreen
-            }
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-        }
-        .frame(minWidth: activeID == nil ? 820 : 1000,
-               idealWidth: activeID == nil ? 820 : 1180,
-               maxWidth: activeID == nil ? 820 : .infinity,
-               minHeight: activeID == nil ? 520 : 680,
-               idealHeight: activeID == nil ? 520 : 780,
-               maxHeight: activeID == nil ? 520 : .infinity)
+        launchScreen
+        .frame(width: 820, height: 520)
         .disabled(sharingBusy)
         .overlay { if sharingBusy { ProgressView("Preparing training set…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .sheet(item: $draft) { value in
             SetEditor(initial: value) { saved in
                 do {
                     try library.save(saved)
-                    workspaceRevision += 1
                     draft = nil
                     cleanupAssets()
                 } catch { libraryError = error.localizedDescription }
@@ -86,6 +71,8 @@ struct ContentView: View {
             } message: { Text(libraryError ?? "") }
         }
         .task {
+            guard !windows.recovered else { return }
+            windows.recovered = true
             do {
                 let failures = await RecordingStore(context: modelContext, assets: try AssetStorage.applicationStorage()).recover()
                 cleanupAssets()
@@ -172,7 +159,19 @@ struct ContentView: View {
     }
 
     private func openSet(_ id: UUID) {
-        do { try library.markOpened(id); activeID = id }
+        guard !RecordingLifetime.shared.isLocked else { RecordingLifetime.shared.explain(); return }
+        do {
+            try library.markOpened(id)
+            guard let model = try modelContext.fetch(FetchDescriptor<TrainingSet>()).first(where: { $0.id == id }) else { return }
+            let set = SetDraft(model: model)
+            Task {
+                await RecordingLifetime.shared.capture?.shutdownAndWait()
+                windows.sessionID = UUID()
+                windows.set = set
+                openWindow(id: "training")
+                dismissWindow(id: "main")
+            }
+        }
         catch { libraryError = error.localizedDescription }
     }
 
@@ -237,9 +236,9 @@ struct ContentView: View {
                                     .padding(12).contentShape(Rectangle())
                                 }.buttonStyle(.plain)
                                     .contextMenu {
-                                        Button("Edit…") { draft = set }
+                                        Button("Edit…") { draft = set }.disabled(windows.set?.id == set.id)
                                         Button("Export Training Set…") { exportSet(set) }
-                                        Button("Delete…", role: .destructive) { deletion = set }
+                                        Button("Delete…", role: .destructive) { deletion = set }.disabled(windows.set?.id == set.id)
                                     }
                                 Divider().padding(.leading, 52)
                             }
@@ -270,7 +269,7 @@ struct ContentView: View {
     }
 }
 
-private struct SetEditor: View {
+struct SetEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: SetDraft
     @State private var selected = 0
@@ -406,5 +405,5 @@ private struct SetEditor: View {
 
 
 #Preview {
-    ContentView().modelContainer(for: [TrainingSet.self, PassageGroup.self, Question.self, Take.self], inMemory: true)
+    ContentView().environment(TrainingWindows()).modelContainer(for: [TrainingSet.self, PassageGroup.self, Question.self, Take.self], inMemory: true)
 }

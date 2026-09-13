@@ -266,7 +266,7 @@ struct CameraPreview: NSViewRepresentable {
     func makeNSView(context: Context) -> PreviewSurface {
         let view = PreviewSurface()
         view.preview.session = session
-        view.preview.videoGravity = .resizeAspectFill
+        view.preview.videoGravity = .resizeAspect
         return view
     }
     func updateNSView(_ nsView: PreviewSurface, context: Context) {

@@ -4,6 +4,7 @@ import SwiftData
 @main
 struct OuterViewApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycle
+    @State private var windows = TrainingWindows()
     private let library: Result<ModelContainer, Error> = Result {
         let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                   appropriateFor: nil, create: true)
@@ -20,7 +21,7 @@ struct OuterViewApp: App {
         Window("OuterView", id: "main") {
             switch library {
             case .success(let container):
-                ContentView().modelContainer(container)
+                ContentView().environment(windows).modelContainer(container)
             case .failure(let error):
                 ContentUnavailableView("Couldn’t Open Your Library", systemImage: "externaldrive.badge.exclamationmark",
                     description: Text("Your existing files have not been removed. Quit and reopen the app to retry.\n\n" + error.localizedDescription))
@@ -29,6 +30,16 @@ struct OuterViewApp: App {
         }
         .defaultSize(width: 820, height: 520)
         .windowResizability(.contentSize)
+
+        Window("Training", id: "training") {
+            if case .success(let container) = library {
+                TrainingWindow().environment(windows).modelContainer(container)
+            }
+        }
+        .defaultSize(width: 1180, height: 780)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
 
         Settings {
             VisibilitySettings()
@@ -60,5 +71,54 @@ private struct VisibilitySettings: View {
         .formStyle(.grouped)
         .frame(width: 440, height: 320)
         .navigationTitle("Settings")
+    }
+}
+
+@Observable
+final class TrainingWindows {
+    var set: SetDraft?
+    var sessionID = UUID()
+    var recovered = false
+}
+
+struct TrainingWindow: View {
+    @Environment(TrainingWindows.self) private var windows
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    @State private var draft: SetDraft?
+    @State private var revision = 0
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if let set = windows.set {
+                PracticeWorkspace(set: set, goHome: {
+                    openWindow(id: "main")
+                    dismissWindow(id: "training")
+                }, edit: { draft = set })
+                .id("\(windows.sessionID)-\(revision)")
+                .navigationTitle(set.title)
+            } else {
+                ContentUnavailableView("Open a Training Set", systemImage: "rectangle.stack")
+            }
+        }
+        .frame(minWidth: 1000, minHeight: 680)
+        .sheet(item: $draft) { value in
+            SetEditor(initial: value) { saved in
+                do {
+                    let library = TrainingLibrary(context: modelContext)
+                    try library.save(saved)
+                    windows.set = saved
+                    revision += 1
+                    draft = nil
+                    try library.cleanupAssets(AssetStorage.applicationStorage())
+                } catch { self.error = error.localizedDescription }
+            }
+            .alert("Couldn’t Save Set", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) { error = nil }
+            } message: { Text(error ?? "") }
+        }
+        .onDisappear { windows.set = nil }
     }
 }

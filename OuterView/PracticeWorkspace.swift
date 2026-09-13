@@ -26,7 +26,9 @@ struct PracticeWorkspace: View {
     @AppStorage("showQuestion") private var showQuestion = true
     @State private var showCamera = true
     @State private var showTimer = true
-    @State private var showTakes = true
+    @AppStorage("showTakes") private var showTakes = true
+    @AppStorage("takesPanelHeight") private var takesPanelHeight = 242.0
+    @State private var resizeStart: Double?
 
     private var group: GroupDraft { self.set.groups[groupIndex] }
 
@@ -86,15 +88,15 @@ struct PracticeWorkspace: View {
                     Divider()
                     VStack(spacing: 20) {
                         RoundedRectangle(cornerRadius: 16).fill(.quaternary.opacity(0.4))
-                            .frame(width: 212, height: 282)
+                            .frame(width: 252, height: 142)
                             .overlay {
                                 if showCamera && capture.state != .idle && capture.state != .preparing {
                                     CameraPreview(session: capture.engine.session).clipShape(RoundedRectangle(cornerRadius: 16))
                                 } else {
                                     VStack(spacing: 12) {
                                         Image(systemName: showCamera ? "video" : "video.slash").font(.largeTitle)
-                                        Text(showCamera ? (progress.isTraining ? "Camera unavailable" : "Camera off") : "Camera hidden").font(.headline)
-                                        if showCamera { Text(progress.isTraining ? "Use Retry Camera in the toolbar" : "Press Start to begin training").font(.caption) }
+                                        Text(showCamera ? (capture.state == .preparing ? "Starting camera…" : (progress.isTraining ? "Camera unavailable" : "Camera off")) : "Camera hidden").font(.headline)
+                                        if showCamera { Text(capture.state == .preparing ? "Preparing your devices" : (progress.isTraining ? "Use Retry Camera in the toolbar" : "Press Start to begin training")).font(.caption) }
                                     }.foregroundStyle(.secondary)
                                 }
                             }
@@ -116,40 +118,10 @@ struct PracticeWorkspace: View {
                             visibilityButton("Timer", visible: $showTimer).padding(10)
                         }
                         Spacer()
-                    }.padding(24).frame(width: 260)
+                    }.padding(24).frame(width: 300)
                 }
-                Divider()
-                DisclosureGroup(isExpanded: $showTakes) {
-                    if let saveError {
-                        HStack {
-                            Text(saveError).foregroundStyle(.red).font(.caption)
-                            Button("Retry Save") { saveCompletedTake() }
-                        }.padding(.vertical, 8)
-                    }
-                    if activeTakes.isEmpty {
-                        Text(questionIndex == nil ? "Reveal a question to review its takes." : "No takes yet. Record an answer when you’re ready.")
-                            .foregroundStyle(.secondary).padding(.vertical, 20)
-                    } else {
-                        ScrollView(.horizontal) {
-                            HStack(spacing: 12) {
-                                ForEach(activeTakes) { take in
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(take.recordedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption)
-                                        Text(SessionProgress.clock(take.durationSeconds)).monospacedDigit()
-                                        HStack {
-                                            Button("Play", systemImage: "play.fill") { playing = take }
-                                            Button("Export", systemImage: "square.and.arrow.up") { exportingTake = take }
-                                            Button("Retry", systemImage: "arrow.counterclockwise") { startRecording() }
-                                                .disabled(capture.state != .ready)
-                                        }.disabled(locked)
-                                    }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
-                                }
-                            }
-                        }.frame(height: 115)
-                    }
-                } label: {
-                    Text("Takes\(questionIndex.map { " · Question \($0 + 1)" } ?? "")").font(.headline)
-                }.padding(20)
+                takesPanel
+
             }
             .background(.background)
         }
@@ -230,6 +202,85 @@ struct PracticeWorkspace: View {
         } message: { Text(capture.error ?? "") }
     }
 
+    private var takesPanel: some View {
+        VStack(spacing: 0) {
+            if showTakes {
+                Rectangle().fill(.quaternary).frame(height: 5)
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                        .onChanged { value in
+                            if resizeStart == nil { resizeStart = takesPanelHeight }
+                            takesPanelHeight = min(300, max(242, (resizeStart ?? 242) - value.translation.height))
+                        }
+                        .onEnded { _ in resizeStart = nil })
+                    .accessibilityLabel("Resize takes panel")
+                    .accessibilityAdjustableAction { direction in
+                        takesPanelHeight = min(300, max(242, takesPanelHeight + (direction == .increment ? 20 : -20)))
+                    }
+            } else { Divider() }
+            HStack(spacing: 8) {
+                Button { showTakes.toggle() } label: {
+                    Label(showTakes ? "Hide takes" : "Show takes", systemImage: "rectangle.bottomthird.inset.filled")
+                        .labelStyle(.iconOnly)
+                }.buttonStyle(.plain).help(showTakes ? "Hide takes" : "Show takes")
+                Text("Takes").font(.headline)
+                if let questionIndex {
+                    Text("Question \(questionIndex + 1) · \(activeTakes.count) takes").foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { showTakes.toggle() } label: {
+                    Image(systemName: showTakes ? "chevron.down" : "chevron.up")
+                }.buttonStyle(.plain).accessibilityLabel(showTakes ? "Collapse takes" : "Expand takes")
+            }.padding(.horizontal, 16).frame(height: 36)
+            if showTakes {
+                Divider()
+                if let saveError {
+                    HStack {
+                        Text(saveError).foregroundStyle(.red).font(.caption).lineLimit(2)
+                        Button("Retry Save") { saveCompletedTake() }
+                    }.padding(8)
+                }
+                if activeTakes.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "film.stack").font(.title2)
+                        Text(questionIndex == nil ? "Reveal a question to review its takes." : "No takes yet. Record an answer when you’re ready.")
+                    }.foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView([.horizontal, .vertical]) {
+                        LazyHStack(alignment: .top, spacing: 12) {
+                            ForEach(activeTakes) { take in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Button { playing = take } label: {
+                                        TakeThumbnail(path: take.videoPath)
+                                            .frame(width: 208, height: 117)
+                                            .overlay(alignment: .bottomTrailing) {
+                                                Text(SessionProgress.clock(take.durationSeconds))
+                                                    .font(.caption.monospacedDigit()).padding(4)
+                                                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 4))
+                                                    .foregroundStyle(.white).padding(6)
+                                            }
+                                    }.buttonStyle(.plain).disabled(locked).accessibilityLabel("Play recording")
+                                    Text(take.recordedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption)
+                                    HStack {
+                                        Button("Play", systemImage: "play.fill") { playing = take }
+                                        Button("Export", systemImage: "square.and.arrow.up") { exportingTake = take }
+                                        Button("Retry", systemImage: "arrow.counterclockwise") { startRecording() }
+                                            .disabled(capture.state != .ready)
+                                    }.controlSize(.small).disabled(locked)
+                                }.frame(width: 208)
+                            }
+                        }.padding(12)
+                    }.frame(maxHeight: .infinity)
+                }
+            }
+        }
+        .frame(height: showTakes ? min(300, max(242, takesPanelHeight)) : 37)
+        .background(.quaternary.opacity(0.12))
+    }
+
     private func endTraining() {
         guard !locked else { return }
         progress.endTraining()
@@ -296,4 +347,50 @@ struct TakePlayer: View {
         }
         .onDisappear { player?.pause() }
     }
+}
+
+struct TakeThumbnail: View {
+    let path: String
+    @State private var thumbnail: NSImage?
+    @State private var unavailable = false
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 80
+        return cache
+    }()
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let thumbnail {
+                Image(nsImage: thumbnail).resizable().scaledToFit()
+            } else if unavailable {
+                Image(systemName: "film").font(.title).foregroundStyle(.white.opacity(0.6))
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: path) {
+            thumbnail = nil
+            unavailable = false
+            if let cached = Self.cache.object(forKey: path as NSString) { thumbnail = cached; return }
+            do {
+                let url = try AssetStorage.applicationStorage().url(for: path)
+                let frame = try await Self.frame(from: url)
+                try Task.checkCancellation()
+                let image = NSImage(cgImage: frame, size: .zero)
+                Self.cache.setObject(image, forKey: path as NSString)
+                thumbnail = image
+            } catch { if !Task.isCancelled { unavailable = true } }
+        }
+    }
+
+    static func frame(from url: URL) async throws -> CGImage {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 416, height: 234)
+        return try await generator.image(at: .zero).image
+    }
+
 }

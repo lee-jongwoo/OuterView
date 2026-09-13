@@ -166,8 +166,8 @@ This is the entry point to the app, separate from the practice workspace and
 its passage-group deck view.
 
 - Use a compact 820 × 520 welcome window with branding/actions on the left
-  and recent training sets on the right. Expand for practice and restore the
-  compact size when returning home.
+  and recent training sets on the right. Open practice in a separate window,
+  preserving each window’s size and position.
 - Sort sets by last-opened date, newest first; never-opened sets follow, newest
   created first. Update lastOpenedAt whenever a set opens. This is local metadata,
   not part of the shared training-set archive.
@@ -183,10 +183,10 @@ its passage-group deck view.
 - When there are no training sets, show an empty state with the same creation
   and import actions.
 
-For v1, use one main window: opening a set replaces the launch screen with its
-workspace, and a Training Sets button returns home. The workspace has a central
-passage/question area, narrow group sidebar, camera/timer on the right, and a
-collapsible takes strip below. Visual details will be reviewed in the UI shell.
+Use a separate welcome window and one training window. Opening a set hides the
+welcome window; Training Sets closes the workspace and reopens the welcome
+window. Switching sets ends the previous camera session. Recording and saving
+continue to block switching.
 
 ## Practice Workspace Layout (SwiftUI)
 
@@ -201,10 +201,14 @@ collapsible takes strip below. Visual details will be reviewed in the UI shell.
 - **Right panel**: camera mirror + whichever timer is
   currently active (reading-elapsed or recording-elapsed depending on stage).
   Each item has its own corner eye button; recording/navigation controls stay
-  in the top bar.
+  in the top bar. Fit the entire camera frame without cropping, with letterboxing
+  when its aspect ratio differs from the landscape preview.
 - **Bottom panel**: list of takes for the *currently active question only*
   (not a global/running log — swaps as the active question changes). Each take
-  supports playback and retry (re-record a new take) from this panel.
+  supports playback, export, and retry (re-record a new take) from this panel.
+  Use an IDE-style dock with a persistent height, explicit resize handle, and
+  collapse control. Empty states and question changes do not resize the dock.
+  Show asynchronously generated, aspect-fit video thumbnails with duration badges.
 
 ---
 
